@@ -636,7 +636,8 @@ async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal
 
 
 async def run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = False,
-                               platform: str = None, target_id: int = None):
+                               platform: str = None, target_id: int = None,
+                               no_notify: bool = False):
     """
     Sync RECEIPT [RV] เฉพาะ Step 1 — เปิด browser ครั้งเดียว วนรันทุกวัน
     """
@@ -734,17 +735,18 @@ async def run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = Fa
             log(f"{'='*55}")
             log(f"Log บันทึกที่: logs\\{log_path.name}")
 
-            ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if failed:
-                notify_gmail(
-                    f"[TRCloud RV] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
-                    f"สรุป RV sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
-                )
-            else:
-                notify_gmail(
-                    f"[TRCloud RV] ✅ {success}/{total} สำเร็จ ({ts_done})",
-                    f"สรุป RV sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
-                )
+            if not no_notify:
+                ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if failed:
+                    notify_gmail(
+                        f"[TRCloud RV] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
+                        f"สรุป RV sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                    )
+                else:
+                    notify_gmail(
+                        f"[TRCloud RV] ✅ {success}/{total} สำเร็จ ({ts_done})",
+                        f"สรุป RV sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
+                    )
 
             await browser.close()
     finally:
@@ -984,7 +986,8 @@ SYNC_FN = {
 # MAIN RUNNER
 # ─────────────────────────────────────────────
 async def run_sync(target_id: int = None, platform: str = None, visible: bool = False,
-                   sync_date: str = None, start_date: str = None, end_date: str = None):
+                   sync_date: str = None, start_date: str = None, end_date: str = None,
+                   no_notify: bool = False):
     """
     เปิด browser ครั้งเดียว วนรันทุก shop ทุกวันในช่วงที่กำหนด
     target_id  : รัน shop เดียว (api_id)
@@ -1108,17 +1111,18 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
             log(f"{'='*55}")
             log(f"Log บันทึกที่: logs\\{log_path.name}")
 
-            ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if failed:
-                notify_gmail(
-                    f"[TRCloud ORDER] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
-                    f"สรุป ORDER sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
-                )
-            else:
-                notify_gmail(
-                    f"[TRCloud ORDER] ✅ {success}/{total} สำเร็จ ({ts_done})",
-                    f"สรุป ORDER sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
-                )
+            if not no_notify:
+                ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if failed:
+                    notify_gmail(
+                        f"[TRCloud ORDER] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
+                        f"สรุป ORDER sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                    )
+                else:
+                    notify_gmail(
+                        f"[TRCloud ORDER] ✅ {success}/{total} สำเร็จ ({ts_done})",
+                        f"สรุป ORDER sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
+                    )
 
             await browser.close()
     finally:
@@ -1138,6 +1142,7 @@ def main():
     parser.add_argument("--date",       type=str, default=None, help="วันที่ที่ต้องการ sync เช่น 2026-03-11 (default: วันนี้)")
     parser.add_argument("--start-date", type=str, default=None, dest="start_date", help="วันเริ่มต้น (ใช้คู่กับ --end-date)")
     parser.add_argument("--end-date",   type=str, default=None, dest="end_date",   help="วันสิ้นสุด (ใช้คู่กับ --start-date)")
+    parser.add_argument("--no-notify",  action="store_true", dest="no_notify",     help="ไม่ส่ง email แจ้งผล (ใช้เมื่อ BAT จัดการ notify เอง)")
     args = parser.parse_args()
 
     if args.setup:
@@ -1159,6 +1164,7 @@ def main():
             visible=args.visible,
             platform=args.platform,
             target_id=args.shop,
+            no_notify=args.no_notify,
         ))
 
     else:
@@ -1169,6 +1175,7 @@ def main():
             sync_date=args.date,
             start_date=args.start_date,
             end_date=args.end_date,
+            no_notify=args.no_notify,
         ))
 
 
