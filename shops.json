@@ -1,0 +1,20 @@
+[
+  {"api_id": 1,  "name": "Shopee Ugreen",      "platform": "shopee"},
+  {"api_id": 6,  "name": "Shopee Fantech Mall", "platform": "shopee"},
+  {"api_id": 8,  "name": "Shopee Fantech Plus", "platform": "shopee"},
+  {"api_id": 9,  "name": "Shopee UgreenGV+",    "platform": "shopee"},
+  {"api_id": 10, "name": "Shopee Philips",      "platform": "shopee"},
+  {"api_id": 12, "name": "Shopee Boya",         "platform": "shopee"},
+  {"api_id": 14, "name": "Shopee GV",           "platform": "shopee"},
+  {"api_id": 15, "name": "Shopee JoyRoom",      "platform": "shopee"},
+  {"api_id": 20, "name": "Shopee Nas",          "platform": "shopee"},
+  {"api_id": 3,  "name": "Tiktok Ugreen",       "platform": "tiktok"},
+  {"api_id": 4,  "name": "Tiktok Fantech",      "platform": "tiktok"},
+  {"api_id": 5,  "name": "Tiktok Boya",         "platform": "tiktok"},
+  {"api_id": 7,  "name": "Tiktok Philips",      "platform": "tiktok"},
+  {"api_id": 2,  "name": "Lazada GV",           "platform": "lazada"},
+  {"api_id": 16, "name": "Lazada Fantech",      "platform": "lazada"},
+  {"api_id": 17, "name": "Lazada Ug mall",      "platform": "lazada"},
+  {"api_id": 18, "name": "Lazada Philips",      "platform": "lazada"},
+  {"api_id": 19, "name": "Lazada Boya",         "platform": "lazada"}
+]

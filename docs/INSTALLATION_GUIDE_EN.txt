@@ -1,0 +1,109 @@
+TRCLOUD Sync Browser - Installation Guide (English)
+
+Purpose
+- Set up this project on a new Windows machine and run the first sync safely.
+
+=======================================================
+1) Requirements
+=======================================================
+1. Windows 10/11
+2. Python 3.11+ (recommended 3.12+)
+3. Internet connection
+4. TRCLOUD user account
+
+=======================================================
+2) Install Python
+=======================================================
+1. Download Python from:
+   https://www.python.org/downloads/
+2. During installation, enable:
+   - "Add python.exe to PATH"
+3. Verify:
+   python --version
+   pip --version
+
+=======================================================
+3) Get Project Files
+=======================================================
+Option A: Git clone
+1. Install Git (if not installed)
+2. Clone repository:
+   git clone https://github.com/deknon/tr_sync.git
+3. Enter project folder:
+   cd tr_sync
+
+Option B: ZIP download
+1. Download ZIP from GitHub
+2. Extract to local folder
+3. Open terminal in project folder
+
+=======================================================
+4) Install Python Dependencies
+=======================================================
+Run:
+pip install playwright
+playwright install chromium
+
+=======================================================
+5) First-time Session Setup (Required)
+=======================================================
+Run:
+python trcloud_sync_browser.py --setup
+
+What to do:
+1. Browser will open
+2. Log in to TRCLOUD manually
+3. Return to terminal and press Enter
+
+Expected result:
+- File created: trcloud_session.json
+
+=======================================================
+6) First Run Test
+=======================================================
+Recommended quick test:
+python trcloud_sync_browser.py --rv --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+
+Menu-based run:
+5_sync_menu_browser.bat
+
+=======================================================
+7) Daily Usage Recommendation
+=======================================================
+- Daily operation: ORDER mode
+- Weekly operation: RV mode
+- For troubleshooting: use visible mode (V/1 in menu)
+
+=======================================================
+8) Logs and Output
+=======================================================
+- Runtime logs:
+  logs/sync_YYYYMMDD_HHMMSS.txt
+- Error screenshots:
+  logs/error_*.png
+
+=======================================================
+9) Common Issues
+=======================================================
+Issue: "Session expired" / redirected to login
+Fix:
+python trcloud_sync_browser.py --setup
+
+Issue: Date format error
+Fix:
+Use YYYY-MM-DD only
+
+Issue: Browser does not open
+Fix:
+Re-run:
+playwright install chromium
+
+=======================================================
+10) Upgrade / Update
+=======================================================
+If using Git:
+git pull
+
+After update, run a smoke test:
+python trcloud_sync_browser.py --rv --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+
