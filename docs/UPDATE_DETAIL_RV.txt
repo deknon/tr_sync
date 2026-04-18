@@ -1,5 +1,45 @@
 TRCLOUD Sync Browser - Update Detail (RECEIPT [RV])
-Date: 2026-04-18
+
+=======================================================
+Date: 2026-04-18 (v2 - Refactor)
+=======================================================
+
+1) Fix: Complete signal safety (global → _Signal class)
+- Replaced global _complete_event variable with _Signal class.
+- One _Signal instance created per browser session.
+- Eliminates race condition where handle_dialog fires after
+  _complete_event is set to None on timeout.
+- All sync functions receive signal as a parameter.
+
+2) Fix: TikTok now waits for Complete signal
+- Added wait_for_complete_popup() after wait_for_operation()
+  in sync_tiktok_shop() Step 1.
+- Previously TikTok could proceed before sync actually finished.
+- Timeout: 180s (same as Shopee Step 1).
+
+3) Fix: Date range opens browser only once
+- run_sync() now accepts start_date/end_date and loops internally.
+- Previously main() called asyncio.run(run_sync()) for each day,
+  opening and closing a new browser per day.
+- Now browser opens once and iterates all days in one session.
+
+4) New: shops.json — shop list extracted from code
+- Added shops.json at project root.
+- Script loads from shops.json at startup; falls back to inline
+  default if file is missing.
+- Team can add/remove shops without touching Python code.
+
+5) New: docs/ folder
+- All .txt documentation files moved to docs/.
+- Git rename tracking preserved (history intact).
+
+6) Validation status
+- Syntax check: pass (py_compile)
+- Commit: 22f03ac
+
+=======================================================
+Date: 2026-04-18 (v1 - Initial RV release)
+=======================================================
 
 1) New feature: RV sync mode
 - Added CLI flag: --rv
