@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 
 trcloud_session.json
+config.json
 
 logs/
 Sync

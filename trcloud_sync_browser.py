@@ -174,14 +174,24 @@ def log(msg: str):
 # ─────────────────────────────────────────────
 # GMAIL ALERT
 # ─────────────────────────────────────────────
-GMAIL_SENDER   = "sender@gmail.com"
-GMAIL_PASSWORD = "APP_PASSWORD_HERE"   # Gmail App Password (16 chars)
-GMAIL_RECEIVER = "receiver@gmail.com"
+_CONFIG_FILE = Path(__file__).parent / "config.json"
+_cfg = {}
+if _CONFIG_FILE.exists():
+    try:
+        with open(_CONFIG_FILE, encoding="utf-8") as _f:
+            _cfg = json.load(_f)
+    except Exception:
+        pass
+
+GMAIL_SENDER   = _cfg.get("gmail_sender",   "")
+GMAIL_PASSWORD = _cfg.get("gmail_password", "")
+GMAIL_RECEIVER = _cfg.get("gmail_receiver", "")
 
 
 def notify_gmail(subject: str, body: str):
     """ส่ง email แจ้งผลผ่าน Gmail SMTP SSL — ถ้า fail จะ log warning เท่านั้น ไม่ crash"""
     try:
+        receivers = [r.strip() for r in GMAIL_RECEIVER.split(",")]
         msg = MIMEText(body, "plain", "utf-8")
         msg["Subject"] = subject
         msg["From"]    = GMAIL_SENDER
@@ -190,7 +200,7 @@ def notify_gmail(subject: str, body: str):
         ctx = ssl.create_default_context()
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as smtp:
             smtp.login(GMAIL_SENDER, GMAIL_PASSWORD)
-            smtp.sendmail(GMAIL_SENDER, GMAIL_RECEIVER, msg.as_string())
+            smtp.sendmail(GMAIL_SENDER, receivers, msg.as_string())
         log(f"📧 Email แจ้งผลส่งแล้ว → {GMAIL_RECEIVER}")
     except Exception as e:
         log(f"⚠ ส่ง email ไม่สำเร็จ (ข้ามได้): {e}")
