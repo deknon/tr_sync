@@ -1,0 +1,212 @@
+TRCLOUD Sync Browser - User Manual (All Functions)
+File: trcloud_sync_browser.py
+Updated: 2026-04-18
+
+=======================================================
+1) Overview
+=======================================================
+This script automates TRCLOUD connector sync with Playwright.
+It supports:
+- Normal platform sync (Shopee / TikTok / Lazada)
+- RECEIPT [RV] sync mode
+- Single day and date range runs
+- Single shop, single platform, or all shops
+
+=======================================================
+2) CLI Commands
+=======================================================
+2.1 First time setup (save login session)
+python trcloud_sync_browser.py --setup
+
+2.2 Interactive menu mode (recommended for operations)
+5_sync_menu_browser.bat
+- Function choice: O/1=ORDER, R/2=RV, A/3=ALL
+- Platform choice: X/0=ALL, S/1=Shopee, T/2=Tiktok, L/3=Lazada
+- Visible choice: V/1=ON, N/0=OFF
+
+2.3 Normal sync (all shops, default date)
+python trcloud_sync_browser.py
+
+2.4 Normal sync by platform
+python trcloud_sync_browser.py --platform shopee
+python trcloud_sync_browser.py --platform tiktok
+python trcloud_sync_browser.py --platform lazada
+
+2.5 Normal sync by shop id
+python trcloud_sync_browser.py --shop 1
+
+2.6 Normal sync single date
+python trcloud_sync_browser.py --date 2026-04-01
+
+2.7 Normal sync date range (auto loop day by day)
+python trcloud_sync_browser.py --start-date 2026-04-01 --end-date 2026-04-07
+
+2.8 RV sync (all RV shops)
+python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-01
+
+2.9 RV sync by platform
+python trcloud_sync_browser.py --rv --platform shopee --start-date 2026-04-01 --end-date 2026-04-01
+
+2.10 RV sync by shop id
+python trcloud_sync_browser.py --rv --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+
+2.11 Show browser while running
+python trcloud_sync_browser.py --visible --platform shopee
+python trcloud_sync_browser.py --rv --visible --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+
+=======================================================
+3) Function Reference
+=======================================================
+3.1 System / Logging Functions
+
+- _configure_console_utf8()
+  Purpose:
+  - Force UTF-8 output on Windows console to prevent Thai text print errors.
+
+- init_log()
+  Purpose:
+  - Create a new log file in logs/ for current run.
+  Returns:
+  - Path of created log file.
+
+- close_log()
+  Purpose:
+  - Close current log file handle safely.
+
+- log(msg: str)
+  Purpose:
+  - Print timestamped log line to console and write to file.
+
+3.2 Session / Utility Functions
+
+- setup_session()
+  Purpose:
+  - Open browser for manual login and save storage state to trcloud_session.json.
+  When to use:
+  - First run or when session expires.
+
+- _screenshot(page, label: str)
+  Purpose:
+  - Save screenshot to logs/ for debugging errors.
+
+- wait_for_modal_and_confirm(page, shop_name: str, timeout: int = 10000) -> bool
+  Purpose:
+  - Wait for modal, tick checkbox/select-all if available, and click confirm button.
+
+- wait_for_operation(page, timeout: int = 120000)
+  Purpose:
+  - Wait for loading/spinner/progress to disappear.
+
+- prepare_complete_event()
+  Purpose:
+  - Reset completion event before clicking sync button.
+
+- calc_timeout(order_count: int) -> int
+  Purpose:
+  - Calculate dynamic timeout (ms) from row/order count.
+
+- wait_for_complete_popup(page, shop_id: int, timeout: int = 120000) -> bool
+  Purpose:
+  - Wait for complete signal from:
+    1) Native alert dialog ("Complete")
+    2) DOM modal with complete keywords
+
+- set_date_field(page, date_str: str) -> bool
+  Purpose:
+  - Set one date filter on page.
+  Input format:
+  - YYYY-MM-DD
+  Internal convert:
+  - DD/MM/YYYY
+
+- js_click_button(page, text: str) -> bool
+  Purpose:
+  - Find button by text and click via JavaScript.
+
+- js_tick_select_all(page) -> int
+  Purpose:
+  - Tick main table select-all checkbox.
+  Returns:
+  - Number of checkboxes detected in main table.
+
+3.3 Sync Business Functions
+
+- sync_receipt_rv_shop(page, shop: dict, sync_date: str) -> bool
+  Purpose:
+  - Run RECEIPT [RV] Step 1 for one shop and one date.
+  Flow:
+  - Open RV URL with shop id
+  - Set date
+  - Click SYNC PAYMENT
+  - Confirm modal/dialog
+  - Wait complete
+  - Click RUN to refresh new data
+
+- run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = False, platform: str = None, target_id: int = None)
+  Purpose:
+  - Orchestrate RV sync loop by date and selected shops.
+  Scope:
+  - all RV shops, one platform, or one shop id
+
+- sync_shopee_shop(page, shop: dict, sync_date: str = None) -> bool
+  Purpose:
+  - Run normal Shopee flow (Step 1, Step 2, Step 3 Full Tax).
+
+- sync_tiktok_shop(page, shop: dict, sync_date: str = None) -> bool
+  Purpose:
+  - Run normal TikTok flow (Step 1).
+
+- sync_lazada_shop(page, shop: dict, sync_date: str = None) -> bool
+  Purpose:
+  - Run normal Lazada flow (Step 1 + Step 3 detail).
+
+- run_sync(target_id: int = None, platform: str = None, visible: bool = False, sync_date: str = None)
+  Purpose:
+  - Main orchestrator for normal (non-RV) sync mode.
+
+- main()
+  Purpose:
+  - Parse CLI arguments and route to setup, RV mode, date-range mode, or normal run.
+
+=======================================================
+4) Data Selection Logic
+=======================================================
+- --shop has highest priority (specific shop id)
+- then --platform (all shops in platform)
+- if neither set, run all configured shops
+
+For RV mode:
+- Uses shop list from SHOPS and appends api_id to RV URL.
+- Prevents "Shop undefined: undefined" issue.
+
+=======================================================
+5) Output Files
+=======================================================
+- Session file:
+  trcloud_session.json
+- Runtime logs:
+  logs/sync_YYYYMMDD_HHMMSS.txt
+- Error screenshots:
+  logs/error_*.png
+
+=======================================================
+6) Troubleshooting
+=======================================================
+Issue: Session expired/login page appears
+Fix:
+python trcloud_sync_browser.py --setup
+
+Issue: Date parse error
+Fix:
+Use YYYY-MM-DD only
+
+Issue: Button not found after UI update
+Fix:
+- Check latest logs/error_*.png
+- Re-run with --visible
+
+Issue: Slow completion/no complete popup
+Fix:
+- Check network and TRCLOUD backend status
+- Review timeout behavior in log
+

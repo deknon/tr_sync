@@ -1,0 +1,53 @@
+TRCLOUD Sync Browser - Update Detail (RECEIPT [RV])
+Date: 2026-04-18
+
+1) New feature: RV sync mode
+- Added CLI flag: --rv
+- Purpose: Run RECEIPT [RV] automation flow.
+
+2) RV now uses shop id from SHOPS
+- URL pattern changed to include id:
+  - /connector/manage-data-tiktok-rv.php?id=<shop_id>
+  - /connector/manage-data-shopee-rv.php?id=<shop_id>
+  - /connector/manage-data-lazada-rv.php?id=<shop_id>
+- Fixes issue: Shop Info showing "undefined: undefined".
+
+3) Step order updated for RV
+- Current flow per shop/day:
+  1. Set Database date
+  2. Click SYNC PAYMENT
+  3. Confirm modal/dialog
+  4. Wait complete/operation
+  5. Click RUN to refresh latest data
+
+4) Date range behavior for RV
+- RV page has single date filter.
+- For --start-date and --end-date, script loops day-by-day automatically.
+
+5) New RV scope controls
+- Supports platform filter with --platform (shopee|tiktok|lazada)
+- Supports single shop filter with --shop <api_id>
+
+6) Stability improvements
+- Added UTF-8 console setup and print fallback for Windows encoding.
+- Log output now flushes immediately.
+- RV complete wait timeout tuned for faster loop behavior.
+
+7) Validation status
+- Syntax check: pass (py_compile)
+- Lint check: no errors
+- Functional test:
+  - Command: python trcloud_sync_browser.py --rv --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+  - Result: success (SYNC PAYMENT + RUN after sync)
+
+8) New interactive BAT menu
+- Added file: 5_sync_menu_browser.bat
+- Supports function selection with 1-char or number:
+  - O/1 = ORDER
+  - R/2 = RV
+  - A/3 = ALL (ORDER + RV)
+- Supports platform selection with 1-char or number:
+  - X/0 = ALL, S/1 = SHOPEE, T/2 = TIKTOK, L/3 = LAZADA
+- Supports visible mode selection:
+  - V/1 = ON, N/0 = OFF
+- Final step asks for start date and end date.

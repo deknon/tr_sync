@@ -1,0 +1,77 @@
+TRCLOUD Sync Browser - User Manual (RECEIPT [RV])
+
+Overview
+- This manual explains how to run RECEIPT [RV] sync in trcloud_sync_browser.py.
+- RV flow runs Step 1 (SYNC PAYMENT), then clicks RUN to refresh data.
+
+Prerequisites
+1) Python installed and added to PATH
+2) Playwright installed:
+   pip install playwright
+   playwright install chromium
+3) Session setup completed at least once:
+   python trcloud_sync_browser.py --setup
+
+Main Commands
+0) Interactive menu (recommended for users)
+   5_sync_menu_browser.bat
+   - Function: O/1, R/2, A/3
+   - Platform: X/0, S/1, T/2, L/3
+   - Visible: V/1, N/0
+
+1) Run RV for all shops, one day
+   python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-01
+
+2) Run RV for one platform, one day
+   python trcloud_sync_browser.py --rv --platform shopee --start-date 2026-04-01 --end-date 2026-04-01
+
+3) Run RV for one shop id, one day
+   python trcloud_sync_browser.py --rv --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+
+4) Run RV for date range (auto loop day-by-day)
+   python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-07
+
+5) Show browser while running (debug)
+   python trcloud_sync_browser.py --rv --visible --start-date 2026-04-01 --end-date 2026-04-01
+
+6) Interactive date input mode
+   python trcloud_sync_browser.py --rv
+   (Then enter Start date and End date in YYYY-MM-DD format)
+
+Runtime Flow (Per Shop / Per Day)
+1) Open RV page with shop id:
+   - tiktok: manage-data-tiktok-rv.php?id=<shop_id>
+   - shopee: manage-data-shopee-rv.php?id=<shop_id>
+   - lazada: manage-data-lazada-rv.php?id=<shop_id>
+2) Set Database date
+3) Click SYNC PAYMENT
+4) Accept dialog + confirm modal (if shown)
+5) Wait for complete/finish signal
+6) Click RUN to refresh latest data
+7) Save status to log
+
+Log and Error Files
+- Logs are saved in:
+  logs/sync_YYYYMMDD_HHMMSS.txt
+- Error screenshots are saved in:
+  logs/error_*.png
+
+Common Issues
+1) Session expired
+- Symptom: redirected to login
+- Fix: run setup again
+  python trcloud_sync_browser.py --setup
+
+2) Date format invalid
+- Use format exactly: YYYY-MM-DD
+
+3) Button not found / UI changed
+- Check latest screenshot in logs/error_*.png
+- Run with --visible to inspect behavior
+
+Quick Verification
+- After run, open latest log and verify lines:
+  - "Step 1: Sync Payment"
+  - "Complete"
+  - "RUN (refresh table หลัง sync)"
+  - "Step 1 OK"

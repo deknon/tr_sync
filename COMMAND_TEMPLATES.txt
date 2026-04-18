@@ -1,0 +1,90 @@
+TRCLOUD Sync Browser - Command Templates (Copy/Paste)
+
+Notes
+- Replace dates and ids as needed.
+- Date format must be YYYY-MM-DD.
+- Menu launcher:
+  5_sync_menu_browser.bat
+
+=======================================================
+SETUP
+=======================================================
+python trcloud_sync_browser.py --setup
+
+=======================================================
+NORMAL SYNC
+=======================================================
+# All shops
+python trcloud_sync_browser.py
+
+# One platform
+python trcloud_sync_browser.py --platform shopee
+python trcloud_sync_browser.py --platform tiktok
+python trcloud_sync_browser.py --platform lazada
+
+# One shop id
+python trcloud_sync_browser.py --shop 1
+
+# One date
+python trcloud_sync_browser.py --date 2026-04-01
+
+# Date range
+python trcloud_sync_browser.py --start-date 2026-04-01 --end-date 2026-04-07
+
+# Visible browser
+python trcloud_sync_browser.py --visible --platform shopee
+
+=======================================================
+RV SYNC
+=======================================================
+# All RV shops, one day
+python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-01
+
+# RV one platform, one day
+python trcloud_sync_browser.py --rv --platform shopee --start-date 2026-04-01 --end-date 2026-04-01
+python trcloud_sync_browser.py --rv --platform tiktok --start-date 2026-04-01 --end-date 2026-04-01
+python trcloud_sync_browser.py --rv --platform lazada --start-date 2026-04-01 --end-date 2026-04-01
+
+# RV one shop id, one day
+python trcloud_sync_browser.py --rv --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+
+# RV date range
+python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-07
+
+# RV visible browser (debug)
+python trcloud_sync_browser.py --rv --visible --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+
+# RV interactive date input
+python trcloud_sync_browser.py --rv
+
+=======================================================
+SAFE DEBUG LOOP
+=======================================================
+# Step 1: Reproduce on one shop/day
+python trcloud_sync_browser.py --rv --visible --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+
+# Step 2: Scale to platform
+python trcloud_sync_browser.py --rv --platform shopee --start-date 2026-04-01 --end-date 2026-04-01
+
+# Step 3: Scale to all shops
+python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-01
+
+=======================================================
+INTERACTIVE BAT MENU
+=======================================================
+# Launch interactive menu
+5_sync_menu_browser.bat
+
+# Supported choices in menu:
+# Function:
+#   O/1 = ORDER
+#   R/2 = RV
+#   A/3 = ALL (ORDER + RV)
+# Platform:
+#   X/0 = ALL
+#   S/1 = SHOPEE
+#   T/2 = TIKTOK
+#   L/3 = LAZADA
+# Visible:
+#   V/1 = ON
+#   N/0 = OFF

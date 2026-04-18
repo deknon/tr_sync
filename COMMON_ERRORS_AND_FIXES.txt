@@ -1,0 +1,72 @@
+TRCLOUD Sync Browser - Common Errors and Fixes
+
+1) Session expired
+Symptoms
+- Script opens login page
+- Log says session invalid/expired
+
+Fix
+python trcloud_sync_browser.py --setup
+
+-------------------------------------------------------
+2) Shop Info shows "undefined: undefined"
+Symptoms
+- RV page loaded but no shop context
+- Sync button behavior inconsistent
+
+Root cause
+- URL without shop id
+
+Fix in current script
+- RV now uses:
+  manage-data-<platform>-rv.php?id=<shop_id>
+
+-------------------------------------------------------
+3) Date field not found
+Symptoms
+- Log shows date set failed
+- Screenshot captured in logs/error_*.png
+
+Fix
+- Verify page is correct RV page for the shop id
+- Run with --visible and confirm date field exists
+- Keep input format: YYYY-MM-DD
+
+-------------------------------------------------------
+4) Step 1 button not found
+Symptoms
+- Log: "Step 1 not found"
+
+Known case from earlier run
+- Wrong endpoint page loaded (not RV page)
+
+Fix
+- Ensure endpoint is RV with id:
+  manage-data-shopee-rv.php?id=1 (example)
+- Re-run and check screenshot
+
+-------------------------------------------------------
+5) Thai log text crashes in console (Windows encoding)
+Symptoms
+- UnicodeEncodeError on print
+
+Fix in current script
+- UTF-8 console reconfigure + safe print fallback enabled
+
+-------------------------------------------------------
+6) Run appears stuck too long
+Symptoms
+- Waiting on completion signal for a long time
+
+Fix
+- Use --visible to inspect UI state
+- Check if confirm dialog is waiting
+- Review latest log lines and error screenshots
+
+-------------------------------------------------------
+7) Best recovery sequence
+1. Stop current run
+2. Re-run one shop + one day:
+   python trcloud_sync_browser.py --rv --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+3. If pass, scale to platform/all shops
+4. Save and share log file with team

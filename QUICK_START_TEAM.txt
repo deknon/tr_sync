@@ -1,0 +1,59 @@
+TRCLOUD Sync Browser - Quick Start (Team)
+
+Goal
+- Run marketplace sync safely and consistently with minimal setup time.
+
+1) One-time setup (per machine)
+1. Install Python (and add to PATH)
+2. Install Playwright:
+   pip install playwright
+   playwright install chromium
+3. Login session setup:
+   python trcloud_sync_browser.py --setup
+
+2) Daily most-used commands
+- Menu mode (recommended for team):
+  5_sync_menu_browser.bat
+  (Supports function/platform selection + visible mode + date range input)
+
+- Normal sync one platform (daily):
+  python trcloud_sync_browser.py --platform shopee
+
+- Normal sync one shop id (daily):
+  python trcloud_sync_browser.py --shop 1
+
+- Normal sync with visible browser (daily debug):
+  python trcloud_sync_browser.py --visible --platform shopee
+
+- RV all shops, one day (weekly):
+  python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-01
+
+- RV one platform, one day (weekly):
+  python trcloud_sync_browser.py --rv --platform shopee --start-date 2026-04-01 --end-date 2026-04-01
+
+- RV one shop id, one day (weekly debug):
+  python trcloud_sync_browser.py --rv --visible --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+
+3) RV runtime flow (what the script does)
+1. Open RV page with shop id
+2. Set Database date
+3. Click SYNC PAYMENT
+4. Confirm dialogs/modals
+5. Wait for completion
+6. Click RUN to refresh data
+7. Log result
+
+4) Where to check results
+- Latest run log:
+  logs/sync_YYYYMMDD_HHMMSS.txt
+- Error screenshots:
+  logs/error_*.png
+
+5) Fast health checklist
+- Session valid? (not redirected to login)
+- Date format is YYYY-MM-DD?
+- Log contains:
+  - Step 1: Sync Payment
+  - Complete
+  - RUN (refresh table หลัง sync)
+  - Step 1 OK
