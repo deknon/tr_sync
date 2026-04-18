@@ -220,11 +220,19 @@
   </div>
   <div class="summary-row">
     <span class="summary-label">ขั้นที่ 5</span>
+    <span class="summary-val">ตั้งค่า Gmail (config.json)</span>
+  </div>
+  <div class="summary-row">
+    <span class="summary-label">ขั้นที่ 6</span>
     <span class="summary-val">Setup session (Login ครั้งแรก)</span>
   </div>
   <div class="summary-row">
     <span class="summary-label">ใช้งานปกติ</span>
     <span class="summary-val">เปิด <strong style="display:inline">5_sync_menu_browser.bat</strong> — จบ</span>
+  </div>
+  <div class="summary-row">
+    <span class="summary-label">อัตโนมัติ</span>
+    <span class="summary-val">ตั้ง Task Scheduler รัน <strong style="display:inline">6_scheduled_sync.bat</strong> ทุกคืน</span>
   </div>
 </div>
 
@@ -293,7 +301,32 @@
 
 <!-- Step 5 -->
 <div class="section">
-  <h2><span class="num">5</span> Setup Session (Login ครั้งแรก)</h2>
+  <h2><span class="num">5</span> ตั้งค่า Gmail แจ้งเตือน</h2>
+  <ul class="steps">
+    <li>Copy ไฟล์ template:</li>
+  </ul>
+  <pre><span class="cmd">copy</span> config.example.json config.json</pre>
+  <ul class="steps">
+    <li>เปิด <code>config.json</code> แล้วแก้ 3 บรรทัด:</li>
+  </ul>
+  <pre>{
+  <span class="arg">"gmail_sender"</span>:   "your_email@gmail.com",
+  <span class="arg">"gmail_password"</span>: "xxxx xxxx xxxx xxxx",
+  <span class="arg">"gmail_receiver"</span>: "receiver@gmail.com"
+}</pre>
+  <div class="box box-yellow">
+    <strong>⚠ gmail_password คือ App Password ไม่ใช่ password ปกติ</strong>
+    Google Account → Security → 2-Step Verification → App passwords → สร้างใหม่ → copy 16 ตัวอักษร
+  </div>
+  <div class="box box-blue">
+    <strong>ℹ ส่งหลายคนได้</strong>
+    <code>"gmail_receiver": "a@gmail.com,b@gmail.com"</code>
+  </div>
+</div>
+
+<!-- Step 6 -->
+<div class="section">
+  <h2><span class="num">6</span> Setup Session (Login ครั้งแรก)</h2>
   <ul class="steps">
     <li>รันคำสั่ง:</li>
   </ul>
@@ -313,16 +346,21 @@
 <div class="section">
   <h2><span class="num">✓</span> ใช้งานประจำวัน</h2>
   <div class="box box-green">
-    <strong>เปิดไฟล์นี้เท่านั้น</strong>
+    <strong>Manual — เลือกวันที่เอง</strong>
     ดับเบิ้ลคลิก <code>5_sync_menu_browser.bat</code><br>
     โปรแกรมจะดึงโค้ดใหม่จาก GitHub ให้อัตโนมัติทุกครั้ง
   </div>
   <ul class="steps">
     <li>เลือก Function: <code>O</code> = ORDER / <code>R</code> = RV / <code>A</code> = ทั้งคู่</li>
     <li>เลือก Platform: <code>X</code> = ทั้งหมด / <code>S</code> = Shopee / <code>T</code> = TikTok / <code>L</code> = Lazada</li>
-    <li>กรอก Start date และ End date (รูปแบบ <code>YYYY-MM-DD</code> เช่น <code>2026-04-18</code>)</li>
+    <li>กรอก Start date และ End date (รูปแบบ <code>YYYY-MM-DD</code> เช่น <code>2026-04-19</code>)</li>
     <li>เลือก Visible: <code>N</code> = headless (เร็ว) / <code>V</code> = ดู browser (debug)</li>
   </ul>
+  <div class="box box-blue">
+    <strong>Auto — รันอัตโนมัติทุกคืน (D-1)</strong>
+    ดับเบิ้ลคลิก <code>6_scheduled_sync.bat</code> หรือตั้ง Task Scheduler<br>
+    คำนวณวันที่เองอัตโนมัติ รัน ORDER + RV แล้วส่ง email แจ้งผล 1 ฉบับ
+  </div>
 </div>
 
 <!-- Troubleshoot -->
@@ -359,12 +397,22 @@
       <td>หน้าเว็บช้า / timeout</td>
       <td>รันซ้ำด้วย <code>--shop &lt;id&gt;</code> เฉพาะ shop นั้น</td>
     </tr>
+    <tr>
+      <td>ไม่ได้รับ email แจ้งผล</td>
+      <td>config.json ไม่มีหรือ password ผิด</td>
+      <td>ตรวจ <code>config.json</code> — ใช้ App Password ไม่ใช่ password ปกติ</td>
+    </tr>
+    <tr>
+      <td><code>[git] Pull skipped</code></td>
+      <td>ยังไม่ได้ login GitHub</td>
+      <td>รัน <code>git pull</code> ด้วยมือ 1 ครั้งแรก แล้ว login</td>
+    </tr>
   </table>
 </div>
 
 <!-- Footer -->
 <div class="footer">
-  TRCloud Sync Browser &nbsp;|&nbsp; docs/TEAM_GUIDE_GIT.html &nbsp;|&nbsp; อัพเดท 2026-04-18
+  TRCloud Sync Browser &nbsp;|&nbsp; docs/TEAM_GUIDE_GIT.html &nbsp;|&nbsp; อัพเดท 2026-04-19 (v3)
 </div>
 
 </body>
