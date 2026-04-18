@@ -64,7 +64,28 @@ Fix
 - Review latest log lines and error screenshots
 
 -------------------------------------------------------
-7) Best recovery sequence
+7) Email notification not sent
+Symptoms
+- No email after sync completes
+
+Fix
+- Check config.json exists with gmail_sender/gmail_password/gmail_receiver
+- Copy template: copy config.example.json config.json
+- Verify Gmail App Password (16 chars, not regular password)
+- Check log for: "ส่ง email ไม่สำเร็จ" line for error detail
+
+-------------------------------------------------------
+8) [git] Pull skipped on BAT open
+Symptoms
+- BAT shows "[git] Pull skipped" instead of "[git] Updated"
+
+Fix
+- Run git pull manually once in project folder
+- Login GitHub when prompted (one-time only)
+- After that BAT auto-pull will work
+
+-------------------------------------------------------
+9) Best recovery sequence
 1. Stop current run
 2. Re-run one shop + one day:
    python trcloud_sync_browser.py --rv --shop 1 --start-date 2026-04-01 --end-date 2026-04-01

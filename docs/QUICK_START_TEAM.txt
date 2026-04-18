@@ -5,16 +5,25 @@ Goal
 
 1) One-time setup (per machine)
 1. Install Python (and add to PATH)
-2. Install Playwright:
+2. Install Git from git-scm.com/download/win
+3. Clone project:
+   git clone https://github.com/deknon/tr_sync.git
+4. Install Playwright:
    pip install playwright
    playwright install chromium
-3. Login session setup:
+5. Copy config template and fill in Gmail credentials:
+   copy config.example.json config.json
+6. Login session setup:
    python trcloud_sync_browser.py --setup
 
 2) Daily most-used commands
-- Menu mode (recommended for team):
+- Scheduled auto sync D-1 (ORDER + RV, one email):
+  6_scheduled_sync.bat
+
+- Menu mode (recommended for manual run):
   5_sync_menu_browser.bat
   (Supports function/platform selection + visible mode + date range input)
+  (Auto git pull on open)
 
 - Normal sync one platform (daily):
   python trcloud_sync_browser.py --platform shopee

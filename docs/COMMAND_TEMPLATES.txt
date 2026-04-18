@@ -72,7 +72,7 @@ python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-0
 =======================================================
 INTERACTIVE BAT MENU
 =======================================================
-# Launch interactive menu
+# Launch interactive menu (auto git pull on open)
 5_sync_menu_browser.bat
 
 # Supported choices in menu:
@@ -88,3 +88,18 @@ INTERACTIVE BAT MENU
 # Visible:
 #   V/1 = ON
 #   N/0 = OFF
+
+=======================================================
+SCHEDULED SYNC (AUTO D-1)
+=======================================================
+# Run fully automated — no input required
+# Calculates yesterday automatically, runs ORDER then RV
+# Sends one combined email at end
+6_scheduled_sync.bat
+
+=======================================================
+SUPPRESS EMAIL NOTIFICATION
+=======================================================
+# Skip email alert (use when BAT handles notify)
+python trcloud_sync_browser.py --start-date 2026-04-01 --end-date 2026-04-01 --no-notify
+python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-01 --no-notify

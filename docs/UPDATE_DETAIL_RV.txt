@@ -1,6 +1,48 @@
 TRCLOUD Sync Browser - Update Detail (RECEIPT [RV])
 
 =======================================================
+Date: 2026-04-19 (v3 - Automation + Notification)
+=======================================================
+
+1) New: 6_scheduled_sync.bat — fully automated D-1 sync
+- Calculates yesterday (D-1) via PowerShell automatically
+- Runs ORDER sync then RV sync sequentially
+- No user input required — designed for Task Scheduler
+- Sends one combined email at end (not two separate)
+
+2) New: Gmail email notification (notify_gmail)
+- Uses smtplib + SSL port 465 — no external library
+- Credentials loaded from config.json (gitignored)
+- Called at end of run_sync() and run_sync_receipt_rv()
+- Subject shows success/fail and shop count
+- If send fails: logs warning only, does not crash
+
+3) New: config.json — credentials outside source code
+- gmail_sender, gmail_password, gmail_receiver
+- gitignored — never committed to GitHub (public repo safe)
+- config.example.json committed as template for new machines
+- Supports multiple receivers: "a@gmail.com,b@gmail.com"
+
+4) New: --no-notify flag
+- Suppresses per-run email when called from scheduled BAT
+- BAT sends one combined email instead of two
+
+5) New: git auto-update in BAT files
+- 5_sync_menu_browser.bat: git pull on open
+- 6_scheduled_sync.bat: git pull before sync
+- Uses --ff-only (safe, never overwrites local changes)
+- Falls back silently if git not available
+
+6) New: docs/TEAM_GUIDE_GIT.html
+- Printable PDF-ready team installation guide
+- Open in Chrome → Ctrl+P → Save as PDF
+- Covers Git install, clone, Playwright setup, daily use
+
+7) Validation status
+- Syntax check: pass (py_compile)
+- Commits: 5a158e5, 7ce08f8, 7126a4e
+
+=======================================================
 Date: 2026-04-18 (v2 - Refactor)
 =======================================================
 
