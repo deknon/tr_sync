@@ -28,6 +28,9 @@ import asyncio
 import json
 import sys
 import argparse
+import smtplib
+import ssl
+from email.mime.text import MIMEText
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
@@ -166,6 +169,31 @@ def log(msg: str):
     if _log_file:
         _log_file.write(line + "\n")
         _log_file.flush()
+
+
+# ─────────────────────────────────────────────
+# GMAIL ALERT
+# ─────────────────────────────────────────────
+GMAIL_SENDER   = "sender@gmail.com"
+GMAIL_PASSWORD = "APP_PASSWORD_HERE"   # Gmail App Password (16 chars)
+GMAIL_RECEIVER = "receiver@gmail.com"
+
+
+def notify_gmail(subject: str, body: str):
+    """ส่ง email แจ้งผลผ่าน Gmail SMTP SSL — ถ้า fail จะ log warning เท่านั้น ไม่ crash"""
+    try:
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = subject
+        msg["From"]    = GMAIL_SENDER
+        msg["To"]      = GMAIL_RECEIVER
+
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as smtp:
+            smtp.login(GMAIL_SENDER, GMAIL_PASSWORD)
+            smtp.sendmail(GMAIL_SENDER, GMAIL_RECEIVER, msg.as_string())
+        log(f"📧 Email แจ้งผลส่งแล้ว → {GMAIL_RECEIVER}")
+    except Exception as e:
+        log(f"⚠ ส่ง email ไม่สำเร็จ (ข้ามได้): {e}")
 
 
 # ─────────────────────────────────────────────
@@ -696,6 +724,18 @@ async def run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = Fa
             log(f"{'='*55}")
             log(f"Log บันทึกที่: logs\\{log_path.name}")
 
+            ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if failed:
+                notify_gmail(
+                    f"[TRCloud RV] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
+                    f"สรุป RV sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                )
+            else:
+                notify_gmail(
+                    f"[TRCloud RV] ✅ {success}/{total} สำเร็จ ({ts_done})",
+                    f"สรุป RV sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
+                )
+
             await browser.close()
     finally:
         close_log()
@@ -1057,6 +1097,18 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
                 log(f"      ❌ ล้มเหลว: {', '.join(failed)}")
             log(f"{'='*55}")
             log(f"Log บันทึกที่: logs\\{log_path.name}")
+
+            ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if failed:
+                notify_gmail(
+                    f"[TRCloud ORDER] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
+                    f"สรุป ORDER sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                )
+            else:
+                notify_gmail(
+                    f"[TRCloud ORDER] ✅ {success}/{total} สำเร็จ ({ts_done})",
+                    f"สรุป ORDER sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
+                )
 
             await browser.close()
     finally:

@@ -2,6 +2,14 @@
 setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
 
+:: ── Auto-update จาก GitHub ──────────────────
+git -C "%~dp0" pull --ff-only --quiet 2>nul && (
+    echo [git] Updated from GitHub
+) || (
+    echo [git] Pull skipped ^(no git / no remote / local changes^)
+)
+echo.
+
 echo ============================================
 echo  TRCloud Browser Sync - MENU
 echo ============================================

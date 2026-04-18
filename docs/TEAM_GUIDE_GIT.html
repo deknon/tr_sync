@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>คู่มือติดตั้ง TRCloud Sync Browser — สำหรับทีม</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Sarabun', 'Tahoma', sans-serif;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #1a1a2e;
+    background: #fff;
+    padding: 40px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff;
+    padding: 28px 32px;
+    border-radius: 10px;
+    margin-bottom: 32px;
+  }
+  .header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .header .subtitle { font-size: 13px; color: #a0aec0; }
+  .header .badge {
+    display: inline-block;
+    background: #4a90d9;
+    color: #fff;
+    font-size: 11px;
+    padding: 2px 10px;
+    border-radius: 20px;
+    margin-top: 8px;
+  }
+
+  /* ── Section ── */
+  .section {
+    margin-bottom: 28px;
+    border-left: 4px solid #4a90d9;
+    padding-left: 16px;
+  }
+  .section h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section h2 .num {
+    background: #4a90d9;
+    color: #fff;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  /* ── Steps ── */
+  .steps { list-style: none; padding: 0; }
+  .steps li {
+    padding: 8px 0 8px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    position: relative;
+  }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    color: #4a90d9;
+    font-size: 12px;
+    top: 10px;
+  }
+
+  /* ── Code blocks ── */
+  code {
+    background: #f4f7fb;
+    border: 1px solid #dde3ee;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    color: #2d5a8e;
+  }
+  pre {
+    background: #1a1a2e;
+    color: #a8d8a8;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 10px 0;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12.5px;
+    line-height: 1.8;
+    overflow-x: auto;
+  }
+  pre .comment { color: #6a8a6a; }
+  pre .cmd     { color: #7ec8e3; }
+  pre .arg     { color: #f9c74f; }
+
+  /* ── Highlight box ── */
+  .box {
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .box-blue   { background: #ebf4ff; border: 1px solid #bee3f8; }
+  .box-green  { background: #f0fff4; border: 1px solid #9ae6b4; }
+  .box-yellow { background: #fffbeb; border: 1px solid #fbd38d; }
+  .box-red    { background: #fff5f5; border: 1px solid #feb2b2; }
+  .box strong { display: block; margin-bottom: 4px; }
+
+  /* ── Summary table ── */
+  .summary {
+    background: #f8faff;
+    border: 1px solid #dde3ee;
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin: 20px 0;
+  }
+  .summary h3 { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: #2d5a8e; }
+  .summary-row {
+    display: flex;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid #eef0f6;
+    align-items: flex-start;
+  }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-label {
+    font-weight: 600;
+    color: #4a90d9;
+    min-width: 90px;
+    font-size: 13px;
+  }
+  .summary-val { color: #333; font-size: 13px; }
+
+  /* ── Troubleshoot table ── */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  th {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 13px;
+  }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #f8faff; }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 36px;
+    padding-top: 16px;
+    border-top: 1px solid #dde3ee;
+    font-size: 11px;
+    color: #888;
+    text-align: center;
+  }
+
+  /* ── Print ── */
+  @media print {
+    body { padding: 20px; }
+    .no-print { display: none; }
+    .section { page-break-inside: avoid; }
+    pre { background: #f4f7fb !important; color: #2d5a8e !important; border: 1px solid #dde3ee; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Print button (hidden when printing) -->
+<div class="no-print" style="text-align:right; margin-bottom:16px;">
+  <button onclick="window.print()"
+    style="background:#4a90d9;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;">
+    🖨 พิมพ์ / บันทึก PDF
+  </button>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <h1>คู่มือติดตั้ง TRCloud Sync Browser</h1>
+  <div class="subtitle">สำหรับสมาชิกทีม — ไม่จำเป็นต้องรู้จัก Git มาก่อน</div>
+  <div class="badge">Windows 10 / 11</div>
+</div>
+
+<!-- Summary -->
+<div class="summary">
+  <h3>สรุปขั้นตอนทั้งหมด (ทำครั้งแรกครั้งเดียว)</h3>
+  <div class="summary-row">
+    <span class="summary-label">ขั้นที่ 1</span>
+    <span class="summary-val">ติดตั้ง Python 3.12+</span>
+  </div>
+  <div class="summary-row">
+    <span class="summary-label">ขั้นที่ 2</span>
+    <span class="summary-val">ติดตั้ง Git</span>
+  </div>
+  <div class="summary-row">
+    <span class="summary-label">ขั้นที่ 3</span>
+    <span class="summary-val">Clone โปรเจกต์ (ดาวน์โหลดโค้ด)</span>
+  </div>
+  <div class="summary-row">
+    <span class="summary-label">ขั้นที่ 4</span>
+    <span class="summary-val">ติดตั้ง Playwright</span>
+  </div>
+  <div class="summary-row">
+    <span class="summary-label">ขั้นที่ 5</span>
+    <span class="summary-val">Setup session (Login ครั้งแรก)</span>
+  </div>
+  <div class="summary-row">
+    <span class="summary-label">ใช้งานปกติ</span>
+    <span class="summary-val">เปิด <strong style="display:inline">5_sync_menu_browser.bat</strong> — จบ</span>
+  </div>
+</div>
+
+<!-- Step 1 -->
+<div class="section">
+  <h2><span class="num">1</span> ติดตั้ง Python</h2>
+  <ul class="steps">
+    <li>ดาวน์โหลด Python 3.12 จาก <code>python.org/downloads</code></li>
+    <li>ตอนติดตั้ง <strong>ติ๊ก "Add python.exe to PATH"</strong> ก่อนกด Install</li>
+    <li>เปิด Command Prompt แล้วตรวจสอบ:</li>
+  </ul>
+  <pre>python --version</pre>
+  <div class="box box-green">
+    <strong>✅ ผลที่ถูกต้อง</strong>
+    แสดง <code>Python 3.12.x</code> หรือสูงกว่า
+  </div>
+</div>
+
+<!-- Step 2 -->
+<div class="section">
+  <h2><span class="num">2</span> ติดตั้ง Git</h2>
+  <ul class="steps">
+    <li>ดาวน์โหลด Git จาก <code>git-scm.com/download/win</code></li>
+    <li>ติดตั้งแบบ Next → Next → Finish ได้เลย ไม่ต้องเปลี่ยน option ใดๆ</li>
+    <li>ตรวจสอบใน Command Prompt:</li>
+  </ul>
+  <pre>git --version</pre>
+  <div class="box box-green">
+    <strong>✅ ผลที่ถูกต้อง</strong>
+    แสดง <code>git version 2.x.x</code>
+  </div>
+</div>
+
+<!-- Step 3 -->
+<div class="section">
+  <h2><span class="num">3</span> Clone โปรเจกต์ (ดาวน์โหลดโค้ด)</h2>
+  <ul class="steps">
+    <li>เปิด Command Prompt ที่โฟลเดอร์ที่ต้องการเก็บโปรเจกต์ เช่น <code>C:\Tools\</code></li>
+    <li>รันคำสั่ง:</li>
+  </ul>
+  <pre><span class="cmd">git</span> <span class="arg">clone</span> https://github.com/deknon/tr_sync.git</pre>
+  <ul class="steps">
+    <li>จะได้โฟลเดอร์ <code>tr_sync</code> มาทันที ไม่ต้องทำอีก</li>
+    <li>เข้าโฟลเดอร์:</li>
+  </ul>
+  <pre><span class="cmd">cd</span> tr_sync</pre>
+  <div class="box box-yellow">
+    <strong>⚠ ครั้งแรกอาจถาม GitHub username/password</strong>
+    ใส่บัญชี GitHub ของตัวเอง หรือขอ token จากหัวหน้าทีม
+  </div>
+</div>
+
+<!-- Step 4 -->
+<div class="section">
+  <h2><span class="num">4</span> ติดตั้ง Playwright (Browser Engine)</h2>
+  <ul class="steps">
+    <li>ใน Command Prompt ที่โฟลเดอร์โปรเจกต์ รัน 2 คำสั่งนี้ตามลำดับ:</li>
+  </ul>
+  <pre><span class="cmd">pip</span> <span class="arg">install</span> playwright
+<span class="cmd">playwright</span> <span class="arg">install</span> chromium</pre>
+  <div class="box box-blue">
+    <strong>ℹ ทำแค่ครั้งแรกครั้งเดียว</strong>
+    รอประมาณ 2–5 นาที ระหว่างดาวน์โหลด chromium
+  </div>
+</div>
+
+<!-- Step 5 -->
+<div class="section">
+  <h2><span class="num">5</span> Setup Session (Login ครั้งแรก)</h2>
+  <ul class="steps">
+    <li>รันคำสั่ง:</li>
+  </ul>
+  <pre><span class="cmd">python</span> trcloud_sync_browser.py <span class="arg">--setup</span></pre>
+  <ul class="steps">
+    <li>Browser Chromium จะเปิดขึ้น — Login TRCloud ด้วย username/password ของตัวเอง</li>
+    <li>Login สำเร็จแล้ว กลับมาที่ Command Prompt แล้วกด <code>Enter</code></li>
+    <li>จะมีไฟล์ <code>trcloud_session.json</code> ถูกสร้าง — เก็บ cookie login ไว้</li>
+  </ul>
+  <div class="box box-red">
+    <strong>🔒 ห้าม copy trcloud_session.json ข้ามเครื่อง</strong>
+    ต้องรัน --setup ใหม่ทุกเครื่อง เพราะ session ผูกกับบัญชีของแต่ละคน
+  </div>
+</div>
+
+<!-- Daily use -->
+<div class="section">
+  <h2><span class="num">✓</span> ใช้งานประจำวัน</h2>
+  <div class="box box-green">
+    <strong>เปิดไฟล์นี้เท่านั้น</strong>
+    ดับเบิ้ลคลิก <code>5_sync_menu_browser.bat</code><br>
+    โปรแกรมจะดึงโค้ดใหม่จาก GitHub ให้อัตโนมัติทุกครั้ง
+  </div>
+  <ul class="steps">
+    <li>เลือก Function: <code>O</code> = ORDER / <code>R</code> = RV / <code>A</code> = ทั้งคู่</li>
+    <li>เลือก Platform: <code>X</code> = ทั้งหมด / <code>S</code> = Shopee / <code>T</code> = TikTok / <code>L</code> = Lazada</li>
+    <li>กรอก Start date และ End date (รูปแบบ <code>YYYY-MM-DD</code> เช่น <code>2026-04-18</code>)</li>
+    <li>เลือก Visible: <code>N</code> = headless (เร็ว) / <code>V</code> = ดู browser (debug)</li>
+  </ul>
+</div>
+
+<!-- Troubleshoot -->
+<div class="section">
+  <h2><span class="num">!</span> ปัญหาที่พบบ่อย</h2>
+  <table>
+    <tr>
+      <th>อาการ</th>
+      <th>สาเหตุ</th>
+      <th>วิธีแก้</th>
+    </tr>
+    <tr>
+      <td>Session หมดอายุ / เด้งหน้า login</td>
+      <td>Cookie หมดอายุ</td>
+      <td><code>python trcloud_sync_browser.py --setup</code></td>
+    </tr>
+    <tr>
+      <td>Browser ไม่เปิด</td>
+      <td>Chromium หาย</td>
+      <td><code>playwright install chromium</code></td>
+    </tr>
+    <tr>
+      <td><code>python</code> ไม่รู้จัก</td>
+      <td>Python ไม่ได้ add to PATH</td>
+      <td>ติดตั้ง Python ใหม่ ติ๊ก Add to PATH</td>
+    </tr>
+    <tr>
+      <td><code>[git] Pull skipped</code></td>
+      <td>ยังไม่ได้ login GitHub</td>
+      <td>รัน <code>git pull</code> ด้วยมือ 1 ครั้งแรก</td>
+    </tr>
+    <tr>
+      <td>Shop sync ล้มเหลว</td>
+      <td>หน้าเว็บช้า / timeout</td>
+      <td>รันซ้ำด้วย <code>--shop &lt;id&gt;</code> เฉพาะ shop นั้น</td>
+    </tr>
+  </table>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  TRCloud Sync Browser &nbsp;|&nbsp; docs/TEAM_GUIDE_GIT.html &nbsp;|&nbsp; อัพเดท 2026-04-18
+</div>
+
+</body>
+</html>
