@@ -37,11 +37,11 @@ Goal
 - RV all shops, one day (weekly):
   python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-01
 
-- RV one platform, one day (weekly):
-  python trcloud_sync_browser.py --rv --platform shopee --start-date 2026-04-01 --end-date 2026-04-01
+- Status update D-14 (อัพเดท status order เก่า):
+  python trcloud_sync_browser.py --status
 
-- RV one shop id, one day (weekly debug):
-  python trcloud_sync_browser.py --rv --visible --shop 1 --start-date 2026-04-01 --end-date 2026-04-01
+- Return item sync / Shopee only (TO_RETURN + RETURNED):
+  python trcloud_sync_browser.py --return-item
 
 3) RV runtime flow (what the script does)
 1. Open RV page with shop id

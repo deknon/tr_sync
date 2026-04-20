@@ -1,6 +1,33 @@
 TRCLOUD Sync Browser - Update Detail (RECEIPT [RV])
 
 =======================================================
+Date: 2026-04-20 (v4 - Status + Return Item sync)
+=======================================================
+
+1) New: --status flag (Step 1 only, auto D-14 to yesterday)
+- Runs SYNC DOCUMENT + STATUS step only — skips Step 2, 3
+- Date range calculated automatically: today-14 → yesterday
+- All platforms: Shopee, TikTok, Lazada
+- --lookback flag to override day count (default: 14)
+- Purpose: re-sync order status (delivered/returned) from marketplace
+
+2) New: --return-item flag (Step 6, Shopee only)
+- Filters SH Status: TO_RETURN, RETURNED before running
+- Clicks RUN to load filtered data
+- Select All then clicks RETURNED ITEMs (onclick="sync_return()")
+- Shopee only per spec
+- Date range input required (or interactive prompt)
+
+3) New: set_sh_status_filter() helper
+- JS-based multiselect handler
+- Supports select[multiple], Bootstrap multiselect, select2
+- Fires change event to trigger page reload
+
+4) Validation status
+- Syntax check: pass (py_compile)
+- Commit: dc5a964
+
+=======================================================
 Date: 2026-04-19 (v3 - Automation + Notification)
 =======================================================
 

@@ -98,8 +98,40 @@ SCHEDULED SYNC (AUTO D-1)
 6_scheduled_sync.bat
 
 =======================================================
+STATUS SYNC (Step 1 only — อัพเดท status D-14)
+=======================================================
+# All platforms, auto D-14 to yesterday
+python trcloud_sync_browser.py --status
+
+# Custom lookback (เช่น 30 วัน)
+python trcloud_sync_browser.py --status --lookback 30
+
+# One platform only
+python trcloud_sync_browser.py --status --platform shopee
+
+# One shop only
+python trcloud_sync_browser.py --status --shop 1
+
+# Debug
+python trcloud_sync_browser.py --status --visible --platform shopee
+
+=======================================================
+RETURN ITEM SYNC (Step 6 — Shopee only)
+=======================================================
+# Interactive date input
+python trcloud_sync_browser.py --return-item
+
+# Specify date range
+python trcloud_sync_browser.py --return-item --start-date 2026-04-01 --end-date 2026-04-20
+
+# One shop debug
+python trcloud_sync_browser.py --return-item --visible --shop 1 --start-date 2026-04-20 --end-date 2026-04-20
+
+=======================================================
 SUPPRESS EMAIL NOTIFICATION
 =======================================================
 # Skip email alert (use when BAT handles notify)
 python trcloud_sync_browser.py --start-date 2026-04-01 --end-date 2026-04-01 --no-notify
 python trcloud_sync_browser.py --rv --start-date 2026-04-01 --end-date 2026-04-01 --no-notify
+python trcloud_sync_browser.py --status --no-notify
+python trcloud_sync_browser.py --return-item --start-date 2026-04-01 --end-date 2026-04-20 --no-notify

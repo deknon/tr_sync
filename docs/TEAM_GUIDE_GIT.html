@@ -363,6 +363,29 @@
   </div>
 </div>
 
+<!-- Additional functions -->
+<div class="section">
+  <h2><span class="num">+</span> ฟังก์ชันเพิ่มเติม</h2>
+
+  <div class="box box-blue" style="margin-bottom:12px;">
+    <strong>Status Sync — อัพเดท status order ย้อนหลัง (Step 1 only)</strong>
+    ดึง status delivered / returned / cancelled จาก marketplace สำหรับ order เก่า<br>
+    วันที่: คำนวณอัตโนมัติ <code>D-14 → yesterday</code> ทุก platform
+  </div>
+  <pre><span class="cmd">python</span> trcloud_sync_browser.py <span class="arg">--status</span>
+<span class="comment"># ปรับจำนวนวัน</span>
+<span class="cmd">python</span> trcloud_sync_browser.py <span class="arg">--status --lookback 30</span></pre>
+
+  <div class="box box-yellow" style="margin-bottom:12px;">
+    <strong>Return Item Sync — Shopee เท่านั้น (Step 6)</strong>
+    Filter SH Status = TO_RETURN + RETURNED → Select All → RETURNED ITEMs<br>
+    ต้องกรอก date range (หรือ interactive prompt)
+  </div>
+  <pre><span class="cmd">python</span> trcloud_sync_browser.py <span class="arg">--return-item</span>
+<span class="comment"># ระบุวัน</span>
+<span class="cmd">python</span> trcloud_sync_browser.py <span class="arg">--return-item --start-date 2026-04-01 --end-date 2026-04-20</span></pre>
+</div>
+
 <!-- Troubleshoot -->
 <div class="section">
   <h2><span class="num">!</span> ปัญหาที่พบบ่อย</h2>
@@ -412,7 +435,7 @@
 
 <!-- Footer -->
 <div class="footer">
-  TRCloud Sync Browser &nbsp;|&nbsp; docs/TEAM_GUIDE_GIT.html &nbsp;|&nbsp; อัพเดท 2026-04-19 (v3)
+  TRCloud Sync Browser &nbsp;|&nbsp; docs/TEAM_GUIDE_GIT.html &nbsp;|&nbsp; อัพเดท 2026-04-20 (v4)
 </div>
 
 </body>

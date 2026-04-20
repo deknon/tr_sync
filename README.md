@@ -4,7 +4,9 @@ Playwright browser automation for syncing marketplace orders (Shopee, TikTok, La
 
 ## Features
 
-- **ORDER sync** — Sync document, items, and full tax per shop per day
+- **ORDER sync** — Sync document, items, and full tax per shop per day (Step 1+2+3)
+- **STATUS sync** — Step 1 only, auto D-14 to yesterday, all platforms
+- **RETURN ITEM sync** — Step 6, Shopee only, filter TO_RETURN + RETURNED
 - **RV sync** — Sync payment receipts (RECEIPT [RV])
 - **Scheduled auto-sync** — Fully automated D-1 sync via Task Scheduler
 - **Gmail notification** — Email alert after each run (success/fail summary)
@@ -50,6 +52,20 @@ Select function, platform, date range, and visible mode.
 6_scheduled_sync.bat
 ```
 Calculates yesterday automatically. Runs ORDER then RV. Sends one combined email.
+
+### Status sync (D-14, Step 1 only)
+```bash
+python trcloud_sync_browser.py --status
+python trcloud_sync_browser.py --status --lookback 30
+python trcloud_sync_browser.py --status --platform shopee
+```
+
+### Return item sync (Step 6, Shopee only)
+```bash
+python trcloud_sync_browser.py --return-item
+python trcloud_sync_browser.py --return-item --start-date 2026-04-01 --end-date 2026-04-20
+python trcloud_sync_browser.py --return-item --visible --shop 1 --start-date 2026-04-20 --end-date 2026-04-20
+```
 
 ### Command line
 
@@ -105,6 +121,9 @@ Managed in [`shops.json`](shops.json) — add or remove shops without editing Py
 | `--date <YYYY-MM-DD>` | Sync specific date |
 | `--start-date` / `--end-date` | Date range |
 | `--visible` | Show browser (debug mode) |
+| `--status` | Step 1 only, auto D-14 to yesterday |
+| `--return-item` | Step 6, Shopee only, filter TO_RETURN+RETURNED |
+| `--lookback <n>` | Override lookback days for `--status` (default 14) |
 | `--no-notify` | Skip email notification |
 
 ## Troubleshooting
