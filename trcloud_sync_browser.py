@@ -563,6 +563,248 @@ async def js_tick_select_all(page) -> int:
 
 
 # ─────────────────────────────────────────────
+# SH STATUS FILTER HELPER
+# ─────────────────────────────────────────────
+async def set_sh_status_filter(page, statuses: list) -> bool:
+    """
+    เซ็ต SH Status multiselect filter ให้ตรงกับ statuses ที่ต้องการ
+    รองรับ: select[multiple], Bootstrap multiselect, select2
+    statuses เช่น ['TO_RETURN', 'RETURNED']
+    """
+    result = await page.evaluate("""
+        (statuses) => {
+            const upper = statuses.map(s => s.toUpperCase());
+
+            // ── ค้นหา select element ที่มี option ตรงกับ statuses ──
+            const selects = Array.from(document.querySelectorAll('select'));
+            let target = null;
+            for (const sel of selects) {
+                const opts = Array.from(sel.options).map(o => o.value.toUpperCase() + '|' + o.text.toUpperCase());
+                if (upper.some(s => opts.some(o => o.includes(s)))) {
+                    target = sel;
+                    break;
+                }
+            }
+            if (!target) return {ok: false, reason: 'select not found'};
+
+            // ── clear แล้ว select ตัวที่ต้องการ ──
+            let matched = 0;
+            for (const opt of target.options) {
+                const val = (opt.value + '|' + opt.text).toUpperCase();
+                opt.selected = upper.some(s => val.includes(s));
+                if (opt.selected) matched++;
+            }
+
+            // fire change event
+            target.dispatchEvent(new Event('change', {bubbles: true}));
+
+            // ── Bootstrap multiselect: sync visual checkboxes ──
+            const container = target.closest('.btn-group') ||
+                              document.querySelector('.multiselect-container');
+            if (container) {
+                container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    const label = (cb.value + '|' + (cb.closest('label') || cb.parentElement || {}).textContent || '').toUpperCase();
+                    cb.checked = upper.some(s => label.includes(s));
+                });
+            }
+
+            return {ok: true, matched, total: target.options.length,
+                    id: target.id, name: target.name};
+        }
+    """, statuses)
+
+    if result.get('ok'):
+        log(f"    ✓ SH Status filter: {statuses} (matched {result.get('matched')}/{result.get('total')})")
+        await page.wait_for_timeout(800)
+        return True
+
+    log(f"    ⚠ ไม่พบ SH Status filter: {result.get('reason')} — ดำเนินการต่อ")
+    await _screenshot(page, "sh_status_filter_notfound")
+    return False
+
+
+# ─────────────────────────────────────────────
+# STATUS ONLY SYNC (Step 1 เท่านั้น — ทุก platform)
+# ─────────────────────────────────────────────
+async def sync_shopee_status_only(page, shop: dict, sync_date: str = None, signal: _Signal = None) -> bool:
+    shop_id = shop["api_id"]
+    url = f"{APP_URL}/connector/manage-data-shopee-platform.php?id={shop_id}"
+    try:
+        await page.goto(url, wait_until="networkidle", timeout=30000)
+    except PlaywrightTimeout:
+        log(f"  ❌ โหลดหน้า timeout: {url}")
+        return False
+
+    if sync_date:
+        if not await set_date_field(page, sync_date):
+            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+
+    log(f"  → Step 1 only: Sync Document + Status")
+    try:
+        prepare_complete_event(signal)
+        if not await js_click_button(page, "SYNC DOCUMENT"):
+            log(f"  ❌ ไม่พบปุ่ม Step 1")
+            await _screenshot(page, f"error_shopee{shop_id}_status_step1")
+            return False
+        await page.wait_for_timeout(1000)
+        await wait_for_complete_popup(page, shop_id, signal, timeout=180000)
+        log(f"  ✅ Step 1 OK")
+        return True
+    except Exception as e:
+        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        await _screenshot(page, f"error_shopee{shop_id}_status_step1")
+        return False
+
+
+async def sync_tiktok_status_only(page, shop: dict, sync_date: str = None, signal: _Signal = None) -> bool:
+    shop_id = shop["api_id"]
+    url = f"{APP_URL}/connector/manage-data-tiktok-platform.php?id={shop_id}"
+    try:
+        await page.goto(url, wait_until="networkidle", timeout=30000)
+    except PlaywrightTimeout:
+        log(f"  ❌ โหลดหน้า timeout: {url}")
+        return False
+
+    if sync_date:
+        if not await set_date_field(page, sync_date):
+            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+
+    log(f"  → Step 1 only: Sync Document & Items")
+    try:
+        prepare_complete_event(signal)
+        btn1 = page.get_by_role("button", name="SYNC", exact=False).first
+        await btn1.click()
+        await wait_for_modal_and_confirm(page, shop["name"])
+        await wait_for_operation(page)
+        await wait_for_complete_popup(page, shop_id, signal, timeout=180000)
+        log(f"  ✅ Step 1 OK")
+        return True
+    except Exception as e:
+        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        await _screenshot(page, f"error_tiktok{shop_id}_status_step1")
+        return False
+
+
+async def sync_lazada_status_only(page, shop: dict, sync_date: str = None, signal: _Signal = None) -> bool:
+    shop_id = shop["api_id"]
+    url = f"{APP_URL}/connector/manage-data-lazada-platform.php?id={shop_id}"
+    try:
+        await page.goto(url, wait_until="networkidle", timeout=30000)
+    except PlaywrightTimeout:
+        log(f"  ❌ โหลดหน้า timeout: {url}")
+        return False
+
+    if sync_date:
+        if not await set_date_field(page, sync_date):
+            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+
+    log(f"  → Step 1 only: Sync Document")
+    try:
+        btn1 = page.get_by_role("button", name="SYNC DOCUMENT", exact=False)
+        if not await btn1.is_visible(timeout=5000):
+            btn1 = page.locator("button:has-text('SYNC')").first
+        await btn1.click()
+        await wait_for_modal_and_confirm(page, shop["name"])
+        await wait_for_operation(page)
+        log(f"  ✅ Step 1 OK")
+        return True
+    except Exception as e:
+        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        await _screenshot(page, f"error_lazada{shop_id}_status_step1")
+        return False
+
+
+SYNC_STATUS_FN = {
+    "shopee": sync_shopee_status_only,
+    "tiktok": sync_tiktok_status_only,
+    "lazada": sync_lazada_status_only,
+}
+
+
+# ─────────────────────────────────────────────
+# RETURN ITEM SYNC (Step 6 — Shopee only)
+# ─────────────────────────────────────────────
+async def sync_shopee_return_item(page, shop: dict, sync_date: str = None, signal: _Signal = None) -> bool:
+    """
+    Sync return items — Shopee only
+    Filter SH Status: TO_RETURN, RETURNED → click Step 6
+    """
+    shop_id = shop["api_id"]
+    url = f"{APP_URL}/connector/manage-data-shopee-platform.php?id={shop_id}"
+    try:
+        await page.goto(url, wait_until="networkidle", timeout=30000)
+    except PlaywrightTimeout:
+        log(f"  ❌ โหลดหน้า timeout: {url}")
+        return False
+
+    if sync_date:
+        if not await set_date_field(page, sync_date):
+            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+
+    # ── เซ็ต SH Status filter ──
+    log(f"  → Set SH Status: TO_RETURN, RETURNED")
+    await set_sh_status_filter(page, ["TO_RETURN", "RETURNED"])
+
+    # ── RUN เพื่อโหลดข้อมูลตาม filter ──
+    log(f"  → RUN (โหลดข้อมูล)")
+    try:
+        run_result = await page.evaluate("""
+            () => {
+                const btn = document.querySelector('button.btn-lilac');
+                if (btn) { btn.scrollIntoView({block:'center'}); btn.click();
+                           return btn.title || btn.textContent.trim(); }
+                return null;
+            }
+        """)
+        if run_result is not None:
+            log(f"    JS click: RUN ({run_result.strip()})")
+            await wait_for_operation(page)
+            await page.wait_for_timeout(1500)
+        else:
+            log(f"    ⚠ ไม่พบปุ่ม RUN — ดำเนินการต่อ")
+    except Exception as e:
+        log(f"    ⚠ RUN: {e}")
+
+    # ── Select All ──
+    log(f"  → Select All")
+    order_count = 0
+    try:
+        order_count = await js_tick_select_all(page)
+        await page.wait_for_timeout(300)
+    except Exception as e:
+        log(f"    ⚠ Select All: {e}")
+
+    # ── Step 6: RETURNED ITEMs (onclick="sync_return()") ──
+    log(f"  → Step 6: RETURNED ITEMs")
+    try:
+        prepare_complete_event(signal)
+        clicked = await page.evaluate("""
+            () => {
+                const btn = document.querySelector('button[onclick="sync_return()"]');
+                if (btn) { btn.scrollIntoView({block:'center'}); btn.click();
+                           return btn.textContent.trim(); }
+                return null;
+            }
+        """)
+        if not clicked:
+            log(f"  ❌ ไม่พบปุ่ม sync_return()")
+            await _screenshot(page, f"error_shopee{shop_id}_return_step6_notfound")
+            return False
+        log(f"    JS click: {clicked}")
+
+        await page.wait_for_timeout(1000)
+        await wait_for_modal_and_confirm(page, shop["name"])
+        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count))
+        log(f"  ✅ Step 6 OK")
+        return True
+
+    except Exception as e:
+        log(f"  ❌ Step 6 ล้มเหลว: {e}")
+        await _screenshot(page, f"error_shopee{shop_id}_return_step6")
+        return False
+
+
+# ─────────────────────────────────────────────
 # RECEIPT [RV] SYNC
 # ─────────────────────────────────────────────
 async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal) -> bool:
@@ -1130,23 +1372,277 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
 
 
 # ─────────────────────────────────────────────
+# STATUS RUNNER (Step 1 only, auto D-14)
+# ─────────────────────────────────────────────
+async def run_sync_status(visible: bool = False, target_id: int = None,
+                          platform: str = None, no_notify: bool = False,
+                          lookback_days: int = 14):
+    """
+    Sync Step 1 เท่านั้น (อัพเดท status) — ทุก platform
+    ช่วงวันที่: วันนี้ - lookback_days → วันนี้ (auto คำนวณ)
+    """
+    if not SESSION_FILE.exists():
+        log("❌ ยังไม่มี session กรุณารัน: python trcloud_sync_browser.py --setup")
+        return
+
+    d_end   = date.today() - timedelta(days=1)   # yesterday
+    d_start = d_end - timedelta(days=lookback_days - 1)
+    total_days = lookback_days
+
+    log_path = init_log()
+
+    if target_id is not None:
+        shops = [s for s in SHOPS if s["api_id"] == target_id]
+    elif platform is not None:
+        shops = [s for s in SHOPS if s["platform"] == platform.lower()]
+    else:
+        shops = SHOPS
+
+    if not shops:
+        log(f"❌ ไม่พบ shop")
+        close_log()
+        return
+
+    total   = len(shops) * total_days
+    success = 0
+    failed  = []
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=not visible,
+                slow_mo=100 if visible else 50,
+            )
+            context = await browser.new_context(
+                storage_state=str(SESSION_FILE),
+                viewport={"width": 1280, "height": 900},
+            )
+            page   = await context.new_page()
+            signal = _Signal()
+
+            async def handle_dialog(dialog):
+                log(f"    💬 Dialog: '{dialog.message}' → OK")
+                await dialog.accept()
+                if "complete" in dialog.message.lower():
+                    signal.set()
+            page.on("dialog", handle_dialog)
+
+            await page.goto(f"{APP_URL}/", wait_until="networkidle", timeout=30000)
+            if "login" in page.url.lower():
+                log("❌ Session หมดอายุ กรุณารัน --setup ใหม่")
+                await browser.close()
+                return
+
+            log(f"\n{'='*55}")
+            log(f"STATUS Sync (Step 1 only) — {len(shops)} shop(s) × {total_days} day(s)")
+            log(f"ช่วงวันที่: {d_start} → {d_end} (D-{lookback_days})")
+            log(f"{'='*55}")
+
+            job_i   = 0
+            current = d_start
+            while current <= d_end:
+                log(f"\n{'─'*55}")
+                log(f"วันที่: {current}")
+                log(f"{'─'*55}")
+                for shop in shops:
+                    job_i += 1
+                    log(f"\n[{job_i}/{total}] {shop['name']} ({shop['platform'].upper()})")
+                    fn = SYNC_STATUS_FN.get(shop["platform"])
+                    if fn is None:
+                        log(f"  ⚠ ไม่รองรับ platform: {shop['platform']}")
+                        continue
+                    ok = await fn(page, shop, sync_date=str(current), signal=signal)
+                    if ok:
+                        success += 1
+                    else:
+                        failed.append(f"{shop['name']}@{current}")
+                current += timedelta(days=1)
+
+            log(f"\n{'='*55}")
+            log(f"สรุป STATUS: ✅ {success}/{total} สำเร็จ")
+            if failed:
+                log(f"             ❌ ล้มเหลว: {', '.join(failed)}")
+            log(f"{'='*55}")
+            log(f"Log บันทึกที่: logs\\{log_path.name}")
+
+            if not no_notify:
+                ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if failed:
+                    notify_gmail(
+                        f"[TRCloud STATUS] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
+                        f"สรุป STATUS sync: {success}/{total} สำเร็จ\nD-{lookback_days}: {d_start} → {d_end}\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                    )
+                else:
+                    notify_gmail(
+                        f"[TRCloud STATUS] ✅ {success}/{total} สำเร็จ ({ts_done})",
+                        f"สรุป STATUS sync: {success}/{total} สำเร็จทั้งหมด\nD-{lookback_days}: {d_start} → {d_end}\n\nLog: logs\\{log_path.name}",
+                    )
+
+            await browser.close()
+    finally:
+        close_log()
+
+
+# ─────────────────────────────────────────────
+# RETURN ITEM RUNNER (Step 6 — Shopee only)
+# ─────────────────────────────────────────────
+async def run_sync_return(start_date: str, end_date: str, visible: bool = False,
+                          target_id: int = None, no_notify: bool = False):
+    """
+    Sync return items (Step 6) — Shopee เท่านั้น
+    Filter SH Status: TO_RETURN, RETURNED
+    """
+    if not SESSION_FILE.exists():
+        log("❌ ยังไม่มี session กรุณารัน: python trcloud_sync_browser.py --setup")
+        return
+
+    try:
+        d_start = date.fromisoformat(start_date)
+        d_end   = date.fromisoformat(end_date)
+    except ValueError:
+        log(f"❌ วันที่ไม่ถูกต้อง: {start_date} / {end_date}")
+        return
+
+    if d_start > d_end:
+        log("❌ start-date ต้องน้อยกว่าหรือเท่ากับ end-date")
+        return
+
+    log_path = init_log()
+    total_days = (d_end - d_start).days + 1
+
+    if target_id is not None:
+        shops = [s for s in SHOPS if s["api_id"] == target_id and s["platform"] == "shopee"]
+    else:
+        shops = [s for s in SHOPS if s["platform"] == "shopee"]
+
+    if not shops:
+        log("❌ ไม่พบ Shopee shop")
+        close_log()
+        return
+
+    total   = len(shops) * total_days
+    success = 0
+    failed  = []
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=not visible,
+                slow_mo=100 if visible else 50,
+            )
+            context = await browser.new_context(
+                storage_state=str(SESSION_FILE),
+                viewport={"width": 1280, "height": 900},
+            )
+            page   = await context.new_page()
+            signal = _Signal()
+
+            async def handle_dialog(dialog):
+                log(f"    💬 Dialog: '{dialog.message}' → OK")
+                await dialog.accept()
+                if "complete" in dialog.message.lower():
+                    signal.set()
+            page.on("dialog", handle_dialog)
+
+            await page.goto(f"{APP_URL}/", wait_until="networkidle", timeout=30000)
+            if "login" in page.url.lower():
+                log("❌ Session หมดอายุ กรุณารัน --setup ใหม่")
+                await browser.close()
+                return
+
+            log(f"\n{'='*55}")
+            log(f"RETURN ITEM Sync (Step 6) — Shopee {len(shops)} shop(s) × {total_days} day(s)")
+            log(f"Filter: SH Status = TO_RETURN, RETURNED")
+            log(f"ช่วงวันที่: {start_date} → {end_date}")
+            log(f"{'='*55}")
+
+            job_i   = 0
+            current = d_start
+            while current <= d_end:
+                log(f"\n{'─'*55}")
+                log(f"วันที่: {current}")
+                log(f"{'─'*55}")
+                for shop in shops:
+                    job_i += 1
+                    log(f"\n[{job_i}/{total}] {shop['name']} (SHOPEE) RETURN")
+                    ok = await sync_shopee_return_item(page, shop, sync_date=str(current), signal=signal)
+                    if ok:
+                        success += 1
+                    else:
+                        failed.append(f"{shop['name']}@{current}")
+                current += timedelta(days=1)
+
+            log(f"\n{'='*55}")
+            log(f"สรุป RETURN: ✅ {success}/{total} สำเร็จ")
+            if failed:
+                log(f"             ❌ ล้มเหลว: {', '.join(failed)}")
+            log(f"{'='*55}")
+            log(f"Log บันทึกที่: logs\\{log_path.name}")
+
+            if not no_notify:
+                ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if failed:
+                    notify_gmail(
+                        f"[TRCloud RETURN] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
+                        f"สรุป RETURN sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                    )
+                else:
+                    notify_gmail(
+                        f"[TRCloud RETURN] ✅ {success}/{total} สำเร็จ ({ts_done})",
+                        f"สรุป RETURN sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
+                    )
+
+            await browser.close()
+    finally:
+        close_log()
+
+
+# ─────────────────────────────────────────────
 # ENTRY POINT
 # ─────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="TRCloud Browser Sync (Playwright)")
-    parser.add_argument("--setup",      action="store_true",  help="Login และ save session (รันครั้งแรก)")
-    parser.add_argument("--rv",         action="store_true",  help="Sync RECEIPT [RV] (เฉพาะ Step 1)")
-    parser.add_argument("--shop",       type=int,             help="Sync เฉพาะ shop id นี้")
-    parser.add_argument("--platform",   choices=["shopee", "tiktok", "lazada"], help="Sync ทุก shop ของ platform")
-    parser.add_argument("--visible",    action="store_true",  help="แสดง browser ขณะรัน (debug mode)")
-    parser.add_argument("--date",       type=str, default=None, help="วันที่ที่ต้องการ sync เช่น 2026-03-11 (default: วันนี้)")
-    parser.add_argument("--start-date", type=str, default=None, dest="start_date", help="วันเริ่มต้น (ใช้คู่กับ --end-date)")
-    parser.add_argument("--end-date",   type=str, default=None, dest="end_date",   help="วันสิ้นสุด (ใช้คู่กับ --start-date)")
-    parser.add_argument("--no-notify",  action="store_true", dest="no_notify",     help="ไม่ส่ง email แจ้งผล (ใช้เมื่อ BAT จัดการ notify เอง)")
+    parser.add_argument("--setup",        action="store_true",  help="Login และ save session (รันครั้งแรก)")
+    parser.add_argument("--rv",           action="store_true",  help="Sync RECEIPT [RV] (เฉพาะ Step 1)")
+    parser.add_argument("--status",       action="store_true",  help="Sync STATUS only (Step 1, auto D-14 ถึงวันนี้)")
+    parser.add_argument("--return-item",  action="store_true",  dest="return_item", help="Sync RETURN ITEM (Step 6, Shopee only, TO_RETURN+RETURNED)")
+    parser.add_argument("--lookback",     type=int, default=14, help="จำนวนวันย้อนหลังสำหรับ --status (default: 14)")
+    parser.add_argument("--shop",         type=int,             help="Sync เฉพาะ shop id นี้")
+    parser.add_argument("--platform",     choices=["shopee", "tiktok", "lazada"], help="Sync ทุก shop ของ platform")
+    parser.add_argument("--visible",      action="store_true",  help="แสดง browser ขณะรัน (debug mode)")
+    parser.add_argument("--date",         type=str, default=None, help="วันที่ที่ต้องการ sync เช่น 2026-03-11 (default: วันนี้)")
+    parser.add_argument("--start-date",   type=str, default=None, dest="start_date", help="วันเริ่มต้น (ใช้คู่กับ --end-date)")
+    parser.add_argument("--end-date",     type=str, default=None, dest="end_date",   help="วันสิ้นสุด (ใช้คู่กับ --start-date)")
+    parser.add_argument("--no-notify",    action="store_true", dest="no_notify",     help="ไม่ส่ง email แจ้งผล (ใช้เมื่อ BAT จัดการ notify เอง)")
     args = parser.parse_args()
 
     if args.setup:
         asyncio.run(setup_session())
+
+    elif args.status:
+        asyncio.run(run_sync_status(
+            visible=args.visible,
+            target_id=args.shop,
+            platform=args.platform,
+            no_notify=args.no_notify,
+            lookback_days=args.lookback,
+        ))
+
+    elif args.return_item:
+        start_date = args.start_date
+        end_date   = args.end_date
+        if not start_date or not end_date:
+            print("\nRETURN ITEM mode (Shopee only)")
+            print("กรอกช่วงวันที่ (YYYY-MM-DD)")
+            start_date = input("Start date: ").strip()
+            end_date   = input("End date  : ").strip()
+        asyncio.run(run_sync_return(
+            start_date=start_date,
+            end_date=end_date,
+            visible=args.visible,
+            target_id=args.shop,
+            no_notify=args.no_notify,
+        ))
 
     elif args.rv:
         start_date = args.start_date
