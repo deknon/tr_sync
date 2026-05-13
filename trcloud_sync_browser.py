@@ -61,11 +61,13 @@ _configure_console_utf8()
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
-BASE_URL     = "https://gv.trcloud.co"
-APP_URL      = f"{BASE_URL}/application"
-SESSION_FILE = Path(__file__).parent / "trcloud_session.json"
-SHOPS_FILE   = Path(__file__).parent / "shops.json"
-LOG_DIR      = Path(__file__).parent / "logs"
+BASE_URL      = "https://gv.trcloud.co"
+APP_URL       = f"{BASE_URL}/application"
+SESSION_FILE  = Path(__file__).parent / "trcloud_session.json"
+SHOPS_FILE    = Path(__file__).parent / "shops.json"
+LOG_DIR       = Path(__file__).parent / "logs"
+LOG_DIR_TEXT  = LOG_DIR / "text"
+LOG_DIR_PHOTO = LOG_DIR / "photo"
 
 RV_ENDPOINTS = {
     "tiktok": f"{APP_URL}/connector/manage-data-tiktok-rv.php?id={{shop_id}}",
@@ -139,12 +141,26 @@ class _Signal:
 _log_file = None
 
 
+def cleanup_old_logs(days: int = 7):
+    """Delete text and photo log files older than `days` days."""
+    cutoff = datetime.now().timestamp() - days * 86400
+    for d in (LOG_DIR_TEXT, LOG_DIR_PHOTO):
+        if d.exists():
+            for f in d.iterdir():
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+
+
 def init_log():
-    """สร้าง log file สำหรับ run นี้"""
+    """Create log file for this run and clean up logs older than 7 days."""
     global _log_file
-    LOG_DIR.mkdir(exist_ok=True)
+    LOG_DIR_TEXT.mkdir(parents=True, exist_ok=True)
+    cleanup_old_logs()
     run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = LOG_DIR / f"sync_{run_ts}.txt"
+    log_path = LOG_DIR_TEXT / f"sync_{run_ts}.txt"
     _log_file = open(log_path, "w", encoding="utf-8")
     log(f"Log file: {log_path.name}")
     log(f"Run time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -201,9 +217,9 @@ def notify_gmail(subject: str, body: str):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as smtp:
             smtp.login(GMAIL_SENDER, GMAIL_PASSWORD)
             smtp.sendmail(GMAIL_SENDER, receivers, msg.as_string())
-        log(f"📧 Email แจ้งผลส่งแล้ว → {GMAIL_RECEIVER}")
+        log(f"📧 Email sent → {GMAIL_RECEIVER}")
     except Exception as e:
-        log(f"⚠ ส่ง email ไม่สำเร็จ (ข้ามได้): {e}")
+        log(f"⚠ Email send failed (skippable): {e}")
 
 
 # ─────────────────────────────────────────────
@@ -211,7 +227,7 @@ def notify_gmail(subject: str, body: str):
 # ─────────────────────────────────────────────
 async def setup_session():
     """เปิด browser ให้ user login แล้ว save session cookie"""
-    log("เปิด browser สำหรับ login...")
+    log("Opening browser for login...")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=False, slow_mo=50)
         context = await browser.new_context()
@@ -234,13 +250,13 @@ async def setup_session():
 # MODAL HANDLER (ใช้กับทุก platform)
 # ─────────────────────────────────────────────
 async def _screenshot(page, label: str):
-    """บันทึก screenshot เมื่อเกิด error"""
+    """Save screenshot on error."""
     try:
-        LOG_DIR.mkdir(exist_ok=True)
+        LOG_DIR_PHOTO.mkdir(parents=True, exist_ok=True)
         ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = LOG_DIR / f"{label}_{ts}.png"
+        path = LOG_DIR_PHOTO / f"{label}_{ts}.png"
         await page.screenshot(path=str(path))
-        log(f"  📸 Screenshot: logs/{path.name}")
+        log(f"  📸 Screenshot: logs/photo/{path.name}")
     except Exception:
         pass
 
@@ -259,7 +275,7 @@ async def wait_for_modal_and_confirm(page, shop_name: str, timeout: int = 10000)
         await page.wait_for_timeout(200)  # รอ animation เสร็จ
 
     except PlaywrightTimeout:
-        log(f"    ⚡ ไม่มี modal (อาจรันทันที)")
+        log(f"    ⚡ No modal found (may run immediately)")
         return True
 
     # ── Tick checkbox — กด select-all (checkbox แรก) เท่านั้น ──
@@ -277,7 +293,7 @@ async def wait_for_modal_and_confirm(page, shop_name: str, timeout: int = 10000)
             if not is_checked:
                 await first_cb.check()
                 await page.wait_for_timeout(100)
-            log(f"    ✓ Tick checkbox ({count} รายการ)")
+            log(f"    ✓ Tick checkbox ({count} item(s))")
 
     except Exception as e:
         log(f"    ⚠ Checkbox: {e}")
@@ -298,13 +314,13 @@ async def wait_for_modal_and_confirm(page, shop_name: str, timeout: int = 10000)
             if await btn.is_visible(timeout=500):
                 await btn.click()
                 confirmed = True
-                log(f"    ✓ กด confirm")
+                log(f"    ✓ Confirm clicked")
                 break
         except Exception:
             continue
 
     if not confirmed:
-        log(f"    ℹ ไม่พบปุ่ม confirm (auto-complete/ปิดเอง) — ดำเนินการต่อ")
+        log(f"    ℹ Confirm button not found (auto-complete/self-close) — continuing")
 
     try:
         await modal.wait_for(state="hidden", timeout=60000)
@@ -316,14 +332,14 @@ async def wait_for_modal_and_confirm(page, shop_name: str, timeout: int = 10000)
 
 
 async def wait_for_operation(page, timeout: int = 120000):
-    """รอ loading spinner หรือ progress bar หาย"""
+    """Wait for loading spinner or progress bar to disappear."""
     try:
         spinner = page.locator(
             '.loading, .spinner, .progress, '
             '[class*="loading"], [class*="spinner"]'
         ).first
         if await spinner.is_visible(timeout=3000):
-            log(f"    ⏳ รอ loading เสร็จ...")
+            log(f"    ⏳ Waiting for loading...")
             await spinner.wait_for(state="hidden", timeout=timeout)
     except PlaywrightTimeout:
         pass
@@ -360,7 +376,7 @@ async def wait_for_complete_popup(page, shop_id: int, signal: _Signal, timeout: 
         await page.wait_for_timeout(300)
         return True
 
-    log(f"    รอ Complete signal (สูงสุด {timeout//1000}s)...")
+    log(f"    Waiting for Complete signal (max {timeout//1000}s)...")
     elapsed = 0
     interval = 500
 
@@ -420,7 +436,7 @@ async def wait_for_complete_popup(page, shop_id: int, signal: _Signal, timeout: 
         await page.wait_for_timeout(interval)
         elapsed += interval
 
-    log(f"    ⚡ ไม่มี Complete signal ใน {timeout//1000}s — ดำเนินการต่อ")
+    log(f"    ⚡ No Complete signal within {timeout//1000}s — continuing")
     return True
 
 
@@ -460,7 +476,7 @@ async def set_date_field(page, date_str: str) -> bool:
         }}
     """)
     if result:
-        log(f"    📅 เซ็ตวันที่: {result}")
+        log(f"    📅 Date set: {result}")
         await page.wait_for_timeout(1000)
         await page.keyboard.press("Enter")
         await page.wait_for_timeout(1500)
@@ -508,7 +524,7 @@ async def js_tick_select_all(page) -> int:
             }));
         }
     """)
-    log(f"    Debug: พบ {len(debug_info)} ตาราง")
+    log(f"    Debug: found {len(debug_info)} table(s)")
     for t in debug_info[:6]:
         log(f"      table[{t['index']}] rows={t['rows']} cbs={t['cbs']} text={t['textSnippet'][:60]}")
 
@@ -553,12 +569,12 @@ async def js_tick_select_all(page) -> int:
 
     if result and result.get('found'):
         count = result.get('cbCount', 0)
-        log(f"    ✓ Select All คลิกแล้ว via={result.get('via')} cbCount={count} checked={result.get('checked')}")
+        log(f"    ✓ Select All clicked via={result.get('via')} cbCount={count} checked={result.get('checked')}")
         await page.wait_for_timeout(1200)
         await _screenshot(page, "after_select_all")
         return count
 
-    log(f"    ⚠ select-all ไม่สำเร็จ: {result}")
+    log(f"    ⚠ select-all failed: {result}")
     return 0
 
 
@@ -618,7 +634,7 @@ async def set_sh_status_filter(page, statuses: list) -> bool:
         await page.wait_for_timeout(800)
         return True
 
-    log(f"    ⚠ ไม่พบ SH Status filter: {result.get('reason')} — ดำเนินการต่อ")
+    log(f"    ⚠ SH Status filter not found: {result.get('reason')} — continuing")
     await _screenshot(page, "sh_status_filter_notfound")
     return False
 
@@ -632,18 +648,18 @@ async def sync_shopee_status_only(page, shop: dict, sync_date: str = None, signa
     try:
         await page.goto(url, wait_until="networkidle", timeout=30000)
     except PlaywrightTimeout:
-        log(f"  ❌ โหลดหน้า timeout: {url}")
+        log(f"  ❌ Page load timeout: {url}")
         return False
 
     if sync_date:
         if not await set_date_field(page, sync_date):
-            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+            log(f"    ⚠ Date field not found — using default date")
 
     log(f"  → Step 1 only: Sync Document + Status")
     try:
         prepare_complete_event(signal)
         if not await js_click_button(page, "SYNC DOCUMENT"):
-            log(f"  ❌ ไม่พบปุ่ม Step 1")
+            log(f"  ❌ Step 1 button not found")
             await _screenshot(page, f"error_shopee{shop_id}_status_step1")
             return False
         await page.wait_for_timeout(1000)
@@ -651,7 +667,7 @@ async def sync_shopee_status_only(page, shop: dict, sync_date: str = None, signa
         log(f"  ✅ Step 1 OK")
         return True
     except Exception as e:
-        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        log(f"  ❌ Step 1 failed: {e}")
         await _screenshot(page, f"error_shopee{shop_id}_status_step1")
         return False
 
@@ -662,12 +678,12 @@ async def sync_tiktok_status_only(page, shop: dict, sync_date: str = None, signa
     try:
         await page.goto(url, wait_until="networkidle", timeout=30000)
     except PlaywrightTimeout:
-        log(f"  ❌ โหลดหน้า timeout: {url}")
+        log(f"  ❌ Page load timeout: {url}")
         return False
 
     if sync_date:
         if not await set_date_field(page, sync_date):
-            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+            log(f"    ⚠ Date field not found — using default date")
 
     log(f"  → Step 1 only: Sync Document & Items")
     try:
@@ -680,7 +696,7 @@ async def sync_tiktok_status_only(page, shop: dict, sync_date: str = None, signa
         log(f"  ✅ Step 1 OK")
         return True
     except Exception as e:
-        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        log(f"  ❌ Step 1 failed: {e}")
         await _screenshot(page, f"error_tiktok{shop_id}_status_step1")
         return False
 
@@ -691,12 +707,12 @@ async def sync_lazada_status_only(page, shop: dict, sync_date: str = None, signa
     try:
         await page.goto(url, wait_until="networkidle", timeout=30000)
     except PlaywrightTimeout:
-        log(f"  ❌ โหลดหน้า timeout: {url}")
+        log(f"  ❌ Page load timeout: {url}")
         return False
 
     if sync_date:
         if not await set_date_field(page, sync_date):
-            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+            log(f"    ⚠ Date field not found — using default date")
 
     log(f"  → Step 1 only: Sync Document")
     try:
@@ -709,7 +725,7 @@ async def sync_lazada_status_only(page, shop: dict, sync_date: str = None, signa
         log(f"  ✅ Step 1 OK")
         return True
     except Exception as e:
-        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        log(f"  ❌ Step 1 failed: {e}")
         await _screenshot(page, f"error_lazada{shop_id}_status_step1")
         return False
 
@@ -734,19 +750,19 @@ async def sync_shopee_return_item(page, shop: dict, sync_date: str = None, signa
     try:
         await page.goto(url, wait_until="networkidle", timeout=30000)
     except PlaywrightTimeout:
-        log(f"  ❌ โหลดหน้า timeout: {url}")
+        log(f"  ❌ Page load timeout: {url}")
         return False
 
     if sync_date:
         if not await set_date_field(page, sync_date):
-            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+            log(f"    ⚠ Date field not found — using default date")
 
     # ── เซ็ต SH Status filter ──
     log(f"  → Set SH Status: TO_RETURN, RETURNED")
     await set_sh_status_filter(page, ["TO_RETURN", "RETURNED"])
 
     # ── RUN เพื่อโหลดข้อมูลตาม filter ──
-    log(f"  → RUN (โหลดข้อมูล)")
+    log(f"  → RUN (load data)")
     try:
         run_result = await page.evaluate("""
             () => {
@@ -761,7 +777,7 @@ async def sync_shopee_return_item(page, shop: dict, sync_date: str = None, signa
             await wait_for_operation(page)
             await page.wait_for_timeout(1500)
         else:
-            log(f"    ⚠ ไม่พบปุ่ม RUN — ดำเนินการต่อ")
+            log(f"    ⚠ RUN button not found — continuing")
     except Exception as e:
         log(f"    ⚠ RUN: {e}")
 
@@ -787,7 +803,7 @@ async def sync_shopee_return_item(page, shop: dict, sync_date: str = None, signa
             }
         """)
         if not clicked:
-            log(f"  ❌ ไม่พบปุ่ม sync_return()")
+            log(f"  ❌ sync_return() button not found")
             await _screenshot(page, f"error_shopee{shop_id}_return_step6_notfound")
             return False
         log(f"    JS click: {clicked}")
@@ -799,7 +815,7 @@ async def sync_shopee_return_item(page, shop: dict, sync_date: str = None, signa
         return True
 
     except Exception as e:
-        log(f"  ❌ Step 6 ล้มเหลว: {e}")
+        log(f"  ❌ Step 6 failed: {e}")
         await _screenshot(page, f"error_shopee{shop_id}_return_step6")
         return False
 
@@ -814,14 +830,14 @@ async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal
 
     url_tpl = RV_ENDPOINTS.get(platform)
     if not url_tpl:
-        log(f"  ❌ ไม่รองรับ RV platform: {platform} (shop={shop_name})")
+        log(f"  ❌ Unsupported RV platform: {platform} (shop={shop_name})")
         return False
     url = url_tpl.format(shop_id=shop_id)
 
     try:
         await page.goto(url, wait_until="networkidle", timeout=30000)
     except PlaywrightTimeout:
-        log(f"  ❌ โหลดหน้า RV timeout: {url}")
+        log(f"  ❌ Page load timeout (RV): {url}")
         return False
 
     log(f"  → Database date: {sync_date}")
@@ -838,7 +854,7 @@ async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal
         if not clicked:
             clicked = await js_click_button(page, "SYNC")
         if not clicked:
-            log("  ❌ ไม่พบปุ่ม Step 1 (SYNC PAYMENT / SYNC DOCUMENT / SYNC)")
+            log("  ❌ Step 1 button not found (SYNC PAYMENT / SYNC DOCUMENT / SYNC)")
             await _screenshot(page, f"error_rv_{platform}{shop_id}_step1_notfound")
             return False
 
@@ -847,7 +863,7 @@ async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal
         await wait_for_operation(page)
         await wait_for_complete_popup(page, 0, signal, timeout=90000)
 
-        log("  → RUN (refresh table หลัง sync)")
+        log("  → RUN (refresh table after sync)")
         try:
             run_result = await page.evaluate("""
                 () => {
@@ -864,7 +880,7 @@ async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal
                 log(f"    JS click: RUN ({run_result.strip()})")
                 await wait_for_operation(page)
             else:
-                log("    ⚠ ไม่พบปุ่ม RUN (btn-lilac)")
+                log("    ⚠ RUN button not found (btn-lilac)")
         except Exception as e:
             log(f"    ⚠ RUN refresh: {e}")
 
@@ -872,7 +888,7 @@ async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal
         return True
 
     except Exception as e:
-        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        log(f"  ❌ Step 1 failed: {e}")
         await _screenshot(page, f"error_rv_{platform}{shop_id}_step1")
         return False
 
@@ -884,18 +900,18 @@ async def run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = Fa
     Sync RECEIPT [RV] เฉพาะ Step 1 — เปิด browser ครั้งเดียว วนรันทุกวัน
     """
     if not SESSION_FILE.exists():
-        log("❌ ยังไม่มี session กรุณารัน: python trcloud_sync_browser.py --setup")
+        log("❌ No session found. Please run: python trcloud_sync_browser.py --setup")
         return
 
     try:
         d_start = date.fromisoformat(start_date)
         d_end   = date.fromisoformat(end_date)
     except ValueError:
-        log(f"❌ วันที่ไม่ถูกต้อง: {start_date} / {end_date}")
+        log(f"❌ Invalid date: {start_date} / {end_date}")
         return
 
     if d_start > d_end:
-        log("❌ start-date ต้องน้อยกว่าหรือเท่ากับ end-date")
+        log("❌ start-date must be <= end-date")
         return
 
     log_path = init_log()
@@ -908,7 +924,7 @@ async def run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = Fa
         rv_shops = [s for s in SHOPS if s["platform"] in ["tiktok", "shopee", "lazada"]]
 
     if not rv_shops:
-        log(f"❌ ไม่พบ shop สำหรับ RV (platform={platform}, shop={target_id})")
+        log(f"❌ No shops found for RV (platform={platform}, shop={target_id})")
         close_log()
         return
 
@@ -938,17 +954,17 @@ async def run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = Fa
                     log("    ✓ Complete signal set")
             page.on("dialog", handle_dialog)
 
-            log("ตรวจสอบ session...")
+            log("Checking session...")
             await page.goto(f"{APP_URL}/", wait_until="networkidle", timeout=30000)
             if "login" in page.url.lower():
-                log("❌ Session หมดอายุ กรุณารัน --setup ใหม่")
+                log("❌ Session expired. Please run --setup again")
                 await browser.close()
                 return
-            log("✅ Session ใช้ได้")
+            log("✅ Session valid")
 
             log(f"\n{'='*55}")
             log(f"RECEIPT [RV] Sync — {len(rv_shops)} shop(s) × {total_days} day(s)")
-            log(f"ช่วงวันที่: {start_date} → {end_date}")
+            log(f"Date range: {start_date} → {end_date}")
             log(f"{'='*55}")
 
             job_i   = 0
@@ -956,7 +972,7 @@ async def run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = Fa
             while current <= d_end:
                 day_label = str(current)
                 log(f"\n{'─'*55}")
-                log(f"วันที่: {day_label}")
+                log(f"Date: {day_label}")
                 log(f"{'─'*55}")
 
                 for shop in rv_shops:
@@ -971,23 +987,23 @@ async def run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = Fa
                 current += timedelta(days=1)
 
             log(f"\n{'='*55}")
-            log(f"สรุป RV: ✅ {success}/{total} สำเร็จ")
+            log(f"Summary RV: ✅ {success}/{total} succeeded")
             if failed:
-                log(f"         ❌ ล้มเหลว: {', '.join(failed)}")
+                log(f"            ❌ Failed: {', '.join(failed)}")
             log(f"{'='*55}")
-            log(f"Log บันทึกที่: logs\\{log_path.name}")
+            log(f"Log saved to: logs\\text\\{log_path.name}")
 
             if not no_notify:
                 ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 if failed:
                     notify_gmail(
                         f"[TRCloud RV] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
-                        f"สรุป RV sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                        f"สรุป RV sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\text\\{log_path.name}",
                     )
                 else:
                     notify_gmail(
                         f"[TRCloud RV] ✅ {success}/{total} สำเร็จ ({ts_done})",
-                        f"สรุป RV sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
+                        f"สรุป RV sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\text\\{log_path.name}",
                     )
 
             await browser.close()
@@ -1005,20 +1021,20 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
     try:
         await page.goto(url, wait_until="networkidle", timeout=30000)
     except PlaywrightTimeout:
-        log(f"  ❌ โหลดหน้า timeout: {url}")
+        log(f"  ❌ Page load timeout: {url}")
         return False
 
     if sync_date:
-        log(f"  → เซ็ตวันที่: {sync_date}")
+        log(f"  → Set date: {sync_date}")
         if not await set_date_field(page, sync_date):
-            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+            log(f"    ⚠ Date field not found — using default date")
 
     # ── Step 1: SYNC DOCUMENT + STATUS ──
     log(f"  → Step 1: Sync Document + Status")
     try:
         prepare_complete_event(signal)
         if not await js_click_button(page, "SYNC DOCUMENT"):
-            log(f"  ❌ ไม่พบปุ่ม Step 1")
+            log(f"  ❌ Step 1 button not found")
             await _screenshot(page, f"error_shopee{shop_id}_step1_notfound")
             return False
 
@@ -1027,16 +1043,16 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         log(f"  ✅ Step 1 OK")
 
     except Exception as e:
-        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        log(f"  ❌ Step 1 failed: {e}")
         await _screenshot(page, f"error_shopee{shop_id}_step1")
         return False
 
-    # ── ติ๊ก Select All (Step 2) ──
-    log(f"  → ติ๊ก Select All")
+    # ── Tick Select All (Step 2) ──
+    log(f"  → Tick Select All")
     order_count = 0
     try:
         order_count = await js_tick_select_all(page)
-        log(f"    {'✓ Select All เรียบร้อย' if order_count else '⚠ ไม่พบ checkbox — ลอง Step 2 ต่อไป'}")
+        log(f"    {'✓ Select All done' if order_count else '⚠ No checkbox found — proceeding to Step 2'}")
         await page.wait_for_timeout(200)
     except Exception as e:
         log(f"    ⚠ Select All: {e}")
@@ -1046,7 +1062,7 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
     try:
         prepare_complete_event(signal)
         if not await js_click_button(page, "SYNC ITEMs"):
-            log(f"  ❌ ไม่พบปุ่ม Step 2")
+            log(f"  ❌ Step 2 button not found")
             await _screenshot(page, f"error_shopee{shop_id}_step2_notfound")
             return False
 
@@ -1055,12 +1071,12 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         log(f"  ✅ Step 2 OK")
 
     except Exception as e:
-        log(f"  ❌ Step 2 ล้มเหลว: {e}")
+        log(f"  ❌ Step 2 failed: {e}")
         await _screenshot(page, f"error_shopee{shop_id}_step2")
         return False
 
-    # ── RUN refresh ก่อน Step 3 ──
-    log(f"  → RUN refresh ก่อน Step 3")
+    # ── RUN refresh before Step 3 ──
+    log(f"  → RUN refresh before Step 3")
     try:
         run_result = await page.evaluate("""
             () => {
@@ -1077,16 +1093,16 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
             log(f"    JS click: RUN ({run_result.strip()})")
             await page.wait_for_timeout(2000)
         else:
-            log(f"    ⚠ ไม่พบปุ่ม RUN (btn-lilac) — ข้ามการ refresh")
+            log(f"    ⚠ RUN button not found (btn-lilac) — skipping refresh")
     except Exception as e:
         log(f"    ⚠ RUN refresh: {e}")
 
-    # ── ติ๊ก Select All (Step 3) ──
-    log(f"  → ติ๊ก Select All (Step 3)")
+    # ── Tick Select All (Step 3) ──
+    log(f"  → Tick Select All (Step 3)")
     order_count_s3 = 0
     try:
         order_count_s3 = await js_tick_select_all(page)
-        log(f"    {'✓ Select All เรียบร้อย' if order_count_s3 else '⚠ ไม่พบ checkbox — ลอง Step 3 ต่อไป'}")
+        log(f"    {'✓ Select All done' if order_count_s3 else '⚠ No checkbox found — proceeding to Step 3'}")
         await page.wait_for_timeout(200)
     except Exception as e:
         log(f"    ⚠ Select All: {e}")
@@ -1096,7 +1112,7 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
     try:
         prepare_complete_event(signal)
         if not await js_click_button(page, "FULL TAX"):
-            log(f"  ❌ ไม่พบปุ่ม Step 3 (FULL TAX)")
+            log(f"  ❌ Step 3 button not found (FULL TAX)")
             await _screenshot(page, f"error_shopee{shop_id}_step3_notfound")
             return False
 
@@ -1105,7 +1121,7 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         log(f"  ✅ Step 3 OK")
 
     except Exception as e:
-        log(f"  ❌ Step 3 ล้มเหลว: {e}")
+        log(f"  ❌ Step 3 failed: {e}")
         await _screenshot(page, f"error_shopee{shop_id}_step3")
         return False
 
@@ -1123,13 +1139,13 @@ async def sync_tiktok_shop(page, shop: dict, sync_date: str = None, signal: _Sig
     try:
         await page.goto(url, wait_until="networkidle", timeout=30000)
     except PlaywrightTimeout:
-        log(f"  ❌ โหลดหน้า timeout: {url}")
+        log(f"  ❌ Page load timeout: {url}")
         return False
 
     if sync_date:
-        log(f"  → เซ็ตวันที่: {sync_date}")
+        log(f"  → Set date: {sync_date}")
         if not await set_date_field(page, sync_date):
-            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+            log(f"    ⚠ Date field not found — using default date")
 
     # ── Step 1: SYNC DOCUMENT & ITEMs ──
     log(f"  → Step 1: Sync Document & Items")
@@ -1143,7 +1159,7 @@ async def sync_tiktok_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         log(f"  ✅ Step 1 OK")
 
     except Exception as e:
-        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        log(f"  ❌ Step 1 failed: {e}")
         await _screenshot(page, f"error_tiktok{shop_id}_step1")
         return False
 
@@ -1161,13 +1177,13 @@ async def sync_lazada_shop(page, shop: dict, sync_date: str = None, signal: _Sig
     try:
         await page.goto(url, wait_until="networkidle", timeout=30000)
     except PlaywrightTimeout:
-        log(f"  ❌ โหลดหน้า timeout: {url}")
+        log(f"  ❌ Page load timeout: {url}")
         return False
 
     if sync_date:
-        log(f"  → เซ็ตวันที่: {sync_date}")
+        log(f"  → Set date: {sync_date}")
         if not await set_date_field(page, sync_date):
-            log(f"    ⚠ ไม่พบ date field — ใช้วันที่ default")
+            log(f"    ⚠ Date field not found — using default date")
 
     # ── Step 1: SYNC DOCUMENT ──
     log(f"  → Step 1: Sync Document")
@@ -1182,7 +1198,7 @@ async def sync_lazada_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         log(f"  ✅ Step 1 OK")
 
     except Exception as e:
-        log(f"  ❌ Step 1 ล้มเหลว: {e}")
+        log(f"  ❌ Step 1 failed: {e}")
         await _screenshot(page, f"error_lazada{shop_id}_step1")
         return False
 
@@ -1197,17 +1213,17 @@ async def sync_lazada_shop(page, shop: dict, sync_date: str = None, signal: _Sig
             return null;
         }""")
         if not result:
-            log(f"  ❌ ไม่พบปุ่ม SYNC DETAIL (sync_detail)")
+            log(f"  ❌ SYNC DETAIL button not found (sync_detail)")
             await _screenshot(page, f"error_lazada{shop_id}_step3_notfound")
             return False
 
-        log(f"    คลิก: {result}")
+        log(f"    Clicked: {result}")
         await wait_for_modal_and_confirm(page, name)
         await wait_for_operation(page)
         log(f"  ✅ Step 3 OK")
 
     except Exception as e:
-        log(f"  ❌ Step 3 ล้มเหลว: {e}")
+        log(f"  ❌ Step 3 failed: {e}")
         await _screenshot(page, f"error_lazada{shop_id}_step3")
         return False
 
@@ -1239,7 +1255,7 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
     start_date / end_date : ช่วงวัน (เปิด browser ครั้งเดียว)
     """
     if not SESSION_FILE.exists():
-        log("❌ ยังไม่มี session กรุณารัน: python trcloud_sync_browser.py --setup")
+        log("❌ No session found. Please run: python trcloud_sync_browser.py --setup")
         return
 
     # ── กำหนดช่วงวันที่ ──
@@ -1248,16 +1264,16 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
             d_start = date.fromisoformat(start_date)
             d_end   = date.fromisoformat(end_date)
         except ValueError as e:
-            log(f"❌ วันที่ไม่ถูกต้อง: {e}")
+            log(f"❌ Invalid date: {e}")
             return
         if d_start > d_end:
-            log("❌ start-date ต้องน้อยกว่าหรือเท่ากับ end-date")
+            log("❌ start-date must be <= end-date")
             return
     elif sync_date:
         try:
             d_start = d_end = date.fromisoformat(sync_date)
         except ValueError as e:
-            log(f"❌ วันที่ไม่ถูกต้อง: {e}")
+            log(f"❌ Invalid date: {e}")
             return
     else:
         d_start = d_end = date.today()
@@ -1270,13 +1286,13 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
     if target_id is not None:
         shops = [s for s in SHOPS if s["api_id"] == target_id]
         if not shops:
-            log(f"❌ ไม่พบ shop id={target_id}")
+            log(f"❌ Shop id={target_id} not found")
             close_log()
             return
     elif platform is not None:
         shops = [s for s in SHOPS if s["platform"] == platform.lower()]
         if not shops:
-            log(f"❌ ไม่พบ shop ของ platform={platform}")
+            log(f"❌ No shops found for platform={platform}")
             close_log()
             return
     else:
@@ -1307,18 +1323,18 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
                     log(f"    ✓ Complete signal set")
             page.on("dialog", handle_dialog)
 
-            log("ตรวจสอบ session...")
+            log("Checking session...")
             await page.goto(f"{APP_URL}/", wait_until="networkidle", timeout=30000)
             if "login" in page.url.lower():
-                log("❌ Session หมดอายุ กรุณารัน --setup ใหม่")
+                log("❌ Session expired. Please run --setup again")
                 await browser.close()
                 return
-            log("✅ Session ใช้ได้")
+            log("✅ Session valid")
 
             log(f"\n{'='*55}")
             log(f"TRCloud Browser Sync — {len(shops)} shop(s) × {total_days} day(s)")
             if total_days > 1:
-                log(f"ช่วงวันที่: {d_start} → {d_end}")
+                log(f"Date range: {d_start} → {d_end}")
             log(f"{'='*55}")
 
             job_i   = 0
@@ -1326,7 +1342,7 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
             while current <= d_end:
                 if total_days > 1:
                     log(f"\n{'─'*55}")
-                    log(f"วันที่: {current}")
+                    log(f"Date: {current}")
                     log(f"{'─'*55}")
 
                 for shop in shops:
@@ -1334,7 +1350,7 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
                     log(f"\n[{job_i}/{total}] {shop['name']} ({shop['platform'].upper()})")
                     fn = SYNC_FN.get(shop["platform"])
                     if fn is None:
-                        log(f"  ⚠ ไม่รองรับ platform: {shop['platform']}")
+                        log(f"  ⚠ Unsupported platform: {shop['platform']}")
                         continue
 
                     ok = await fn(page, shop, sync_date=str(current), signal=signal)
@@ -1347,23 +1363,23 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
                 current += timedelta(days=1)
 
             log(f"\n{'='*55}")
-            log(f"สรุป: ✅ {success}/{total} สำเร็จ")
+            log(f"Summary: ✅ {success}/{total} succeeded")
             if failed:
-                log(f"      ❌ ล้มเหลว: {', '.join(failed)}")
+                log(f"         ❌ Failed: {', '.join(failed)}")
             log(f"{'='*55}")
-            log(f"Log บันทึกที่: logs\\{log_path.name}")
+            log(f"Log saved to: logs\\text\\{log_path.name}")
 
             if not no_notify:
                 ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 if failed:
                     notify_gmail(
                         f"[TRCloud ORDER] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
-                        f"สรุป ORDER sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                        f"สรุป ORDER sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\text\\{log_path.name}",
                     )
                 else:
                     notify_gmail(
                         f"[TRCloud ORDER] ✅ {success}/{total} สำเร็จ ({ts_done})",
-                        f"สรุป ORDER sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
+                        f"สรุป ORDER sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\text\\{log_path.name}",
                     )
 
             await browser.close()
@@ -1382,7 +1398,7 @@ async def run_sync_status(visible: bool = False, target_id: int = None,
     ช่วงวันที่: วันนี้ - lookback_days → วันนี้ (auto คำนวณ)
     """
     if not SESSION_FILE.exists():
-        log("❌ ยังไม่มี session กรุณารัน: python trcloud_sync_browser.py --setup")
+        log("❌ No session found. Please run: python trcloud_sync_browser.py --setup")
         return
 
     d_end   = date.today() - timedelta(days=1)   # yesterday
@@ -1399,7 +1415,7 @@ async def run_sync_status(visible: bool = False, target_id: int = None,
         shops = SHOPS
 
     if not shops:
-        log(f"❌ ไม่พบ shop")
+        log(f"❌ No shops found")
         close_log()
         return
 
@@ -1429,27 +1445,27 @@ async def run_sync_status(visible: bool = False, target_id: int = None,
 
             await page.goto(f"{APP_URL}/", wait_until="networkidle", timeout=30000)
             if "login" in page.url.lower():
-                log("❌ Session หมดอายุ กรุณารัน --setup ใหม่")
+                log("❌ Session expired. Please run --setup again")
                 await browser.close()
                 return
 
             log(f"\n{'='*55}")
             log(f"STATUS Sync (Step 1 only) — {len(shops)} shop(s) × {total_days} day(s)")
-            log(f"ช่วงวันที่: {d_start} → {d_end} (D-{lookback_days})")
+            log(f"Date range: {d_start} → {d_end} (D-{lookback_days})")
             log(f"{'='*55}")
 
             job_i   = 0
             current = d_start
             while current <= d_end:
                 log(f"\n{'─'*55}")
-                log(f"วันที่: {current}")
+                log(f"Date: {current}")
                 log(f"{'─'*55}")
                 for shop in shops:
                     job_i += 1
                     log(f"\n[{job_i}/{total}] {shop['name']} ({shop['platform'].upper()})")
                     fn = SYNC_STATUS_FN.get(shop["platform"])
                     if fn is None:
-                        log(f"  ⚠ ไม่รองรับ platform: {shop['platform']}")
+                        log(f"  ⚠ Unsupported platform: {shop['platform']}")
                         continue
                     ok = await fn(page, shop, sync_date=str(current), signal=signal)
                     if ok:
@@ -1459,23 +1475,23 @@ async def run_sync_status(visible: bool = False, target_id: int = None,
                 current += timedelta(days=1)
 
             log(f"\n{'='*55}")
-            log(f"สรุป STATUS: ✅ {success}/{total} สำเร็จ")
+            log(f"Summary STATUS: ✅ {success}/{total} succeeded")
             if failed:
-                log(f"             ❌ ล้มเหลว: {', '.join(failed)}")
+                log(f"               ❌ Failed: {', '.join(failed)}")
             log(f"{'='*55}")
-            log(f"Log บันทึกที่: logs\\{log_path.name}")
+            log(f"Log saved to: logs\\text\\{log_path.name}")
 
             if not no_notify:
                 ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 if failed:
                     notify_gmail(
                         f"[TRCloud STATUS] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
-                        f"สรุป STATUS sync: {success}/{total} สำเร็จ\nD-{lookback_days}: {d_start} → {d_end}\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                        f"สรุป STATUS sync: {success}/{total} สำเร็จ\nD-{lookback_days}: {d_start} → {d_end}\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\text\\{log_path.name}",
                     )
                 else:
                     notify_gmail(
                         f"[TRCloud STATUS] ✅ {success}/{total} สำเร็จ ({ts_done})",
-                        f"สรุป STATUS sync: {success}/{total} สำเร็จทั้งหมด\nD-{lookback_days}: {d_start} → {d_end}\n\nLog: logs\\{log_path.name}",
+                        f"สรุป STATUS sync: {success}/{total} สำเร็จทั้งหมด\nD-{lookback_days}: {d_start} → {d_end}\n\nLog: logs\\text\\{log_path.name}",
                     )
 
             await browser.close()
@@ -1493,18 +1509,18 @@ async def run_sync_return(start_date: str, end_date: str, visible: bool = False,
     Filter SH Status: TO_RETURN, RETURNED
     """
     if not SESSION_FILE.exists():
-        log("❌ ยังไม่มี session กรุณารัน: python trcloud_sync_browser.py --setup")
+        log("❌ No session found. Please run: python trcloud_sync_browser.py --setup")
         return
 
     try:
         d_start = date.fromisoformat(start_date)
         d_end   = date.fromisoformat(end_date)
     except ValueError:
-        log(f"❌ วันที่ไม่ถูกต้อง: {start_date} / {end_date}")
+        log(f"❌ Invalid date: {start_date} / {end_date}")
         return
 
     if d_start > d_end:
-        log("❌ start-date ต้องน้อยกว่าหรือเท่ากับ end-date")
+        log("❌ start-date must be <= end-date")
         return
 
     log_path = init_log()
@@ -1516,7 +1532,7 @@ async def run_sync_return(start_date: str, end_date: str, visible: bool = False,
         shops = [s for s in SHOPS if s["platform"] == "shopee"]
 
     if not shops:
-        log("❌ ไม่พบ Shopee shop")
+        log("❌ No Shopee shops found")
         close_log()
         return
 
@@ -1546,21 +1562,21 @@ async def run_sync_return(start_date: str, end_date: str, visible: bool = False,
 
             await page.goto(f"{APP_URL}/", wait_until="networkidle", timeout=30000)
             if "login" in page.url.lower():
-                log("❌ Session หมดอายุ กรุณารัน --setup ใหม่")
+                log("❌ Session expired. Please run --setup again")
                 await browser.close()
                 return
 
             log(f"\n{'='*55}")
             log(f"RETURN ITEM Sync (Step 6) — Shopee {len(shops)} shop(s) × {total_days} day(s)")
             log(f"Filter: SH Status = TO_RETURN, RETURNED")
-            log(f"ช่วงวันที่: {start_date} → {end_date}")
+            log(f"Date range: {start_date} → {end_date}")
             log(f"{'='*55}")
 
             job_i   = 0
             current = d_start
             while current <= d_end:
                 log(f"\n{'─'*55}")
-                log(f"วันที่: {current}")
+                log(f"Date: {current}")
                 log(f"{'─'*55}")
                 for shop in shops:
                     job_i += 1
@@ -1573,23 +1589,23 @@ async def run_sync_return(start_date: str, end_date: str, visible: bool = False,
                 current += timedelta(days=1)
 
             log(f"\n{'='*55}")
-            log(f"สรุป RETURN: ✅ {success}/{total} สำเร็จ")
+            log(f"Summary RETURN: ✅ {success}/{total} succeeded")
             if failed:
-                log(f"             ❌ ล้มเหลว: {', '.join(failed)}")
+                log(f"               ❌ Failed: {', '.join(failed)}")
             log(f"{'='*55}")
-            log(f"Log บันทึกที่: logs\\{log_path.name}")
+            log(f"Log saved to: logs\\text\\{log_path.name}")
 
             if not no_notify:
                 ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 if failed:
                     notify_gmail(
                         f"[TRCloud RETURN] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
-                        f"สรุป RETURN sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\{log_path.name}",
+                        f"สรุป RETURN sync: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\text\\{log_path.name}",
                     )
                 else:
                     notify_gmail(
                         f"[TRCloud RETURN] ✅ {success}/{total} สำเร็จ ({ts_done})",
-                        f"สรุป RETURN sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\{log_path.name}",
+                        f"สรุป RETURN sync: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\text\\{log_path.name}",
                     )
 
             await browser.close()
