@@ -4,11 +4,20 @@ setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 
+:: Ensure Git is reachable (Task Scheduler uses minimal PATH)
+set "PATH=%PATH%;C:\Program Files\Git\cmd;C:\Program Files\Git\bin;C:\Program Files (x86)\Git\cmd"
+
 :: Auto-update from GitHub
-git -C "%~dp0" pull --ff-only --quiet 2>nul && (
-    echo [git] Updated from GitHub
-) || (
-    echo [git] Pull skipped
+where git >nul 2>&1
+if errorlevel 1 (
+    echo [git] Skipped: git not found in PATH
+) else (
+    git -C "%~dp0" pull --ff-only --quiet 2>nul
+    if errorlevel 1 (
+        echo [git] Pull skipped ^(local changes or no network^)
+    ) else (
+        echo [git] Updated from GitHub
+    )
 )
 
 :: Calculate yesterday (D-1)
