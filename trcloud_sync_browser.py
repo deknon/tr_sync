@@ -357,7 +357,7 @@ def calc_timeout(order_count: int) -> int:
     คำนวณ timeout (ms) แบบ dynamic จากจำนวน orders
     สูตร: max(300s, 120s_base + count × 1.5s) — cap ที่ 3600s (1 ชั่วโมง)
     """
-    seconds = max(300, int(120 + order_count * 1.5))
+    seconds = max(300, int(120 + order_count * 10))
     seconds = min(seconds, 3600)
     log(f"    ⏱ Dynamic timeout: {order_count} orders → {seconds}s")
     return seconds * 1000
