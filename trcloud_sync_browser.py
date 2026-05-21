@@ -30,6 +30,7 @@ import sys
 import argparse
 import smtplib
 import ssl
+import socket
 from email.mime.text import MIMEText
 from datetime import datetime, date, timedelta
 from pathlib import Path
@@ -139,6 +140,8 @@ class _Signal:
 # LOGGER (console + file)
 # ─────────────────────────────────────────────
 _log_file = None
+_log_mode = "RUN"
+_pc_name  = socket.gethostname()
 
 
 def cleanup_old_logs(days: int = 7):
@@ -154,13 +157,14 @@ def cleanup_old_logs(days: int = 7):
                         pass
 
 
-def init_log():
+def init_log(mode: str = "RUN"):
     """Create log file for this run and clean up logs older than 7 days."""
-    global _log_file
+    global _log_file, _log_mode
+    _log_mode = mode.upper()
     LOG_DIR_TEXT.mkdir(parents=True, exist_ok=True)
     cleanup_old_logs()
-    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = LOG_DIR_TEXT / f"sync_{run_ts}.txt"
+    run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_path = LOG_DIR_TEXT / f"run_{_log_mode}_{_pc_name}_{run_ts}.txt"
     _log_file = open(log_path, "w", encoding="utf-8")
     log(f"Log file: {log_path.name}")
     log(f"Run time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -253,8 +257,8 @@ async def _screenshot(page, label: str):
     """Save screenshot on error."""
     try:
         LOG_DIR_PHOTO.mkdir(parents=True, exist_ok=True)
-        ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = LOG_DIR_PHOTO / f"{label}_{ts}.png"
+        ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        path = LOG_DIR_PHOTO / f"run_{_log_mode}_{_pc_name}_{label}_{ts}.png"
         await page.screenshot(path=str(path))
         log(f"  📸 Screenshot: logs/photo/{path.name}")
     except Exception:
@@ -913,7 +917,7 @@ async def run_sync_receipt_rv(start_date: str, end_date: str, visible: bool = Fa
         log("❌ start-date must be <= end-date")
         return
 
-    log_path = init_log()
+    log_path = init_log("RV")
 
     if target_id is not None:
         rv_shops = [s for s in SHOPS if s["api_id"] == target_id]
@@ -1279,7 +1283,7 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
 
     total_days = (d_end - d_start).days + 1
 
-    log_path = init_log()
+    log_path = init_log("ORDER")
 
     # ── เลือก shops ──
     if target_id is not None:
@@ -1404,7 +1408,7 @@ async def run_sync_status(visible: bool = False, target_id: int = None,
     d_start = d_end - timedelta(days=lookback_days - 1)
     total_days = lookback_days
 
-    log_path = init_log()
+    log_path = init_log("STATUS")
 
     if target_id is not None:
         shops = [s for s in SHOPS if s["api_id"] == target_id]
@@ -1522,7 +1526,7 @@ async def run_sync_return(start_date: str, end_date: str, visible: bool = False,
         log("❌ start-date must be <= end-date")
         return
 
-    log_path = init_log()
+    log_path = init_log("RETURN")
     total_days = (d_end - d_start).days + 1
 
     if target_id is not None:

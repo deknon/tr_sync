@@ -220,7 +220,7 @@ goto END_RUN
 echo.
 echo ------------------------------------------
 echo Sync finished.
-echo Log saved in: logs\sync_*.txt
+echo Log saved in: logs\text\run_*.txt
 echo Opening logs folder...
 explorer "%~dp0logs"
 echo.
