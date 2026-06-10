@@ -44,20 +44,6 @@ set RV_EXIT=%ERRORLEVEL%
 echo [RV] End  : %time%
 echo.
 
-:: STATUS sync (Step 1 only, D-14 auto)
-echo [STATUS] Start: %time%
-python "%~dp0trcloud_sync_browser.py" --status --no-notify
-set STATUS_EXIT=%ERRORLEVEL%
-echo [STATUS] End  : %time%
-echo.
-
-:: RETURN ITEM sync (Step 6, Shopee only)
-echo [RETURN] Start: %time%
-python "%~dp0trcloud_sync_browser.py" --return-item --start-date %YESTERDAY% --end-date %YESTERDAY% --no-notify
-set RETURN_EXIT=%ERRORLEVEL%
-echo [RETURN] End  : %time%
-echo.
-
 :: Combined email notification
 set ORDER_STATUS=success
 if not %ORDER_EXIT%==0 set ORDER_STATUS=failed
@@ -65,13 +51,7 @@ if not %ORDER_EXIT%==0 set ORDER_STATUS=failed
 set RV_STATUS=success
 if not %RV_EXIT%==0 set RV_STATUS=failed
 
-set STATUS_STATUS=success
-if not %STATUS_EXIT%==0 set STATUS_STATUS=failed
-
-set RETURN_STATUS=success
-if not %RETURN_EXIT%==0 set RETURN_STATUS=failed
-
-python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] Scheduled sync %YESTERDAY% done', 'Scheduled sync completed for %YESTERDAY%\n\nORDER  : %ORDER_STATUS%\nRV     : %RV_STATUS%\nSTATUS : %STATUS_STATUS%\nRETURN : %RETURN_STATUS%')"
+python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] Scheduled sync %YESTERDAY% done', 'Scheduled sync completed for %YESTERDAY%\n\nORDER : %ORDER_STATUS%\nRV    : %RV_STATUS%')"
 
 echo ============================================================
 echo  Done  [%date% %time%]
