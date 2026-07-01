@@ -76,6 +76,11 @@ RV_ENDPOINTS = {
     "lazada": f"{APP_URL}/connector/manage-data-lazada-rv.php?id={{shop_id}}",
 }
 
+# โหลด SO เข้า TRCloud แบบ FULL INVOICE (FULL TAX) — เริ่มจาก tiktok ก่อน
+FULL_INVOICE_ENDPOINTS = {
+    "tiktok": f"{APP_URL}/connector/manage-data-tiktok-trcloud.php?id={{shop_id}}",
+}
+
 # ─────────────────────────────────────────────
 # SHOPS — โหลดจาก shops.json (fallback inline)
 # ─────────────────────────────────────────────
@@ -1132,6 +1137,100 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
 
 
 # ─────────────────────────────────────────────
+# FULL INVOICE (โหลด SO เข้า TRCloud — FULL TAX)
+# ─────────────────────────────────────────────
+async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Signal) -> bool:
+    """
+    โหลด SO แบบ FULL INVOICE (ปุ่ม "FULL TAX DOWNLOAD to TRCLOUD" / sync_trcloud())
+    รันต่อจาก sync order ของวันนั้นเสร็จแล้ว — รองรับเฉพาะ platform ที่มีใน FULL_INVOICE_ENDPOINTS
+    """
+    platform = shop["platform"]
+    shop_id  = shop["api_id"]
+    name     = shop["name"]
+
+    url_tpl = FULL_INVOICE_ENDPOINTS.get(platform)
+    if not url_tpl:
+        return True  # platform นี้ยังไม่รองรับ FULL INVOICE — ข้าม ไม่ถือว่า fail
+
+    url = url_tpl.format(shop_id=shop_id)
+    try:
+        await page.goto(url, wait_until="networkidle", timeout=30000)
+    except PlaywrightTimeout:
+        log(f"  ❌ Page load timeout (FULL INVOICE): {url}")
+        return False
+
+    log(f"  → FULL INVOICE: Set date: {sync_date}")
+    if not await set_date_field(page, sync_date):
+        log(f"    ⚠ Date field not found — using default date")
+
+    log(f"  → FULL INVOICE: RUN (generate report)")
+    try:
+        run_result = await page.evaluate("""
+            () => {
+                const btn = document.querySelector('button.btn-lilac');
+                if (btn) { btn.scrollIntoView({block:'center'}); btn.click();
+                           return btn.title || btn.textContent.trim(); }
+                return null;
+            }
+        """)
+        if run_result is not None:
+            log(f"    JS click: RUN ({run_result.strip()})")
+        else:
+            log(f"    ⚠ RUN button not found — continuing")
+        await wait_for_operation(page)
+        await page.wait_for_timeout(1500)
+    except Exception as e:
+        log(f"    ⚠ RUN: {e}")
+
+    log(f"  → FULL INVOICE: Select All")
+    try:
+        await js_tick_select_all(page)
+        await page.wait_for_timeout(300)
+    except Exception as e:
+        log(f"    ⚠ Select All: {e}")
+
+    # main-table แสดงผล report ทั้งหมด ไม่มี checkbox ต่อแถว (sync ทีเดียวทั้ง batch)
+    # นับจำนวนแถวจริงเพื่อคำนวณ timeout ให้ตรงกับปริมาณออเดอร์ — js_tick_select_all คืนค่า
+    # checkbox count ของ table ซึ่งไม่สัมพันธ์กับจำนวนออเดอร์ในหน้านี้
+    order_count = await page.evaluate("""
+        () => document.querySelector('#main-table tbody[name=output]')?.querySelectorAll('tr').length || 0
+    """)
+    log(f"    Report rows: {order_count}")
+
+    if order_count == 0:
+        log(f"  ✅ FULL INVOICE: no orders for {sync_date} — skip")
+        return True
+
+    log(f"  → FULL TAX DOWNLOAD to TRCLOUD")
+    try:
+        prepare_complete_event(signal)
+        clicked = await page.evaluate("""
+            () => {
+                const btn = document.querySelector('button[onclick="sync_trcloud()"]');
+                if (btn) { btn.scrollIntoView({block:'center'}); btn.click();
+                           return btn.textContent.trim(); }
+                return null;
+            }
+        """)
+        if not clicked:
+            log(f"  ❌ sync_trcloud() button not found")
+            await _screenshot(page, f"error_{platform}{shop_id}_full_invoice_notfound")
+            return False
+        log(f"    JS click: {clicked}")
+
+        await page.wait_for_timeout(1000)
+        await wait_for_modal_and_confirm(page, name)
+        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count))
+        log(f"  ✅ FULL INVOICE OK")
+        return True
+
+    except Exception as e:
+        log(f"  ❌ FULL INVOICE failed: {e}")
+        await _screenshot(page, f"error_{platform}{shop_id}_full_invoice")
+        return False
+
+
+# ─────────────────────────────────────────────
 # TIKTOK SYNC
 # ─────────────────────────────────────────────
 async def sync_tiktok_shop(page, shop: dict, sync_date: str = None, signal: _Signal = None) -> bool:
@@ -1164,6 +1263,10 @@ async def sync_tiktok_shop(page, shop: dict, sync_date: str = None, signal: _Sig
     except Exception as e:
         log(f"  ❌ Step 1 failed: {e}")
         await _screenshot(page, f"error_tiktok{shop_id}_step1")
+        return False
+
+    # ── Step 2: FULL INVOICE (โหลด SO เข้า TRCloud) ──
+    if not await sync_full_invoice_step(page, shop, sync_date or str(date.today()), signal):
         return False
 
     return True
