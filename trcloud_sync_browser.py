@@ -76,10 +76,26 @@ RV_ENDPOINTS = {
     "lazada": f"{APP_URL}/connector/manage-data-lazada-rv.php?id={{shop_id}}",
 }
 
-# โหลด SO เข้า TRCloud แบบ FULL INVOICE (FULL TAX) — เริ่มจาก tiktok ก่อน
+# โหลด SO เข้า TRCloud แบบ FULL INVOICE (FULL TAX) — หน้า UI เหมือนกันทุก platform
 FULL_INVOICE_ENDPOINTS = {
     "tiktok": f"{APP_URL}/connector/manage-data-tiktok-trcloud.php?id={{shop_id}}",
+    "shopee": f"{APP_URL}/connector/manage-data-shopee-trcloud.php?id={{shop_id}}",
+    "lazada": f"{APP_URL}/connector/manage-data-lazada-trcloud.php?id={{shop_id}}",
 }
+
+# Shopee/Lazada เท่านั้นที่มี filter "Full Tax" (1=ลูกค้าขอ ETAX, 0=บิลปกติ)
+# ต้องสลับ prefix เอกสารที่หน้า manage-shop ก่อน download แต่ละกลุ่ม — TikTok ไม่มี filter นี้
+SHOP_SETTINGS_ENDPOINTS = {
+    "shopee": f"{APP_URL}/connector/manage-shop-shopee.php?id={{shop_id}}",
+    "lazada": f"{APP_URL}/connector/manage-shop-lazada.php?id={{shop_id}}",
+}
+PREFIX_IV_ETAX   = "ETIV"
+PREFIX_IV_NORMAL = "ONIV"
+
+# Contact Name บนหน้า manage-shop (select: 0=Follow Platform, 1=Follow TRCLOUD Master)
+# ETAX ต้องใช้ชื่อ-ที่อยู่ตามที่ลูกค้ากรอกในแพลตฟอร์ม / ปกติใช้ชื่อจาก TRCLOUD Master
+CONTACT_NAME_FOLLOW_PLATFORM = "0"
+CONTACT_NAME_FOLLOW_MASTER   = "1"
 
 # ─────────────────────────────────────────────
 # SHOPS — โหลดจาก shops.json (fallback inline)
@@ -1133,37 +1149,38 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         await _screenshot(page, f"error_shopee{shop_id}_step3")
         return False
 
+    # ── FULL INVOICE (โหลด SO เข้า TRCloud) ──
+    if not await sync_full_invoice_step(page, shop, sync_date or str(date.today()), signal):
+        return False
+
     return True
 
 
 # ─────────────────────────────────────────────
 # FULL INVOICE (โหลด SO เข้า TRCloud — FULL TAX)
 # ─────────────────────────────────────────────
-async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Signal) -> bool:
+async def _safe_goto(page, url: str, timeout: int = 30000, retries: int = 2) -> bool:
     """
-    โหลด SO แบบ FULL INVOICE (ปุ่ม "FULL TAX DOWNLOAD to TRCLOUD" / sync_trcloud())
-    รันต่อจาก sync order ของวันนั้นเสร็จแล้ว — รองรับเฉพาะ platform ที่มีใน FULL_INVOICE_ENDPOINTS
+    page.goto ที่ทน 'interrupted by another navigation' — เกิดขึ้นเมื่อ Save [F2] ที่หน้า
+    manage-shop ยิง redirect ของตัวเองอยู่ ตอนที่เรา goto ไปหน้าอื่นพร้อมกันพอดี (race)
     """
-    platform = shop["platform"]
-    shop_id  = shop["api_id"]
-    name     = shop["name"]
+    for attempt in range(retries + 1):
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=timeout)
+            return True
+        except PlaywrightTimeout:
+            if attempt == retries:
+                return False
+        except Exception as e:
+            if attempt == retries:
+                return False
+            log(f"    ⚠ Navigation interrupted, retry {attempt + 1}/{retries}: {str(e).splitlines()[0]}")
+            await page.wait_for_timeout(1000)
+    return False
 
-    url_tpl = FULL_INVOICE_ENDPOINTS.get(platform)
-    if not url_tpl:
-        return True  # platform นี้ยังไม่รองรับ FULL INVOICE — ข้าม ไม่ถือว่า fail
 
-    url = url_tpl.format(shop_id=shop_id)
-    try:
-        await page.goto(url, wait_until="networkidle", timeout=30000)
-    except PlaywrightTimeout:
-        log(f"  ❌ Page load timeout (FULL INVOICE): {url}")
-        return False
-
-    log(f"  → FULL INVOICE: Set date: {sync_date}")
-    if not await set_date_field(page, sync_date):
-        log(f"    ⚠ Date field not found — using default date")
-
-    log(f"  → FULL INVOICE: RUN (generate report)")
+async def _run_report_and_count(page) -> int:
+    """กด RUN (generate_report) แล้วนับจำนวนแถวใน main-table output"""
     try:
         run_result = await page.evaluate("""
             () => {
@@ -1182,24 +1199,39 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
     except Exception as e:
         log(f"    ⚠ RUN: {e}")
 
+    # main-table แสดงผล report ทั้งหมด ไม่มี checkbox ต่อแถว (sync ทีเดียวทั้ง batch)
+    # นับจำนวนแถวจริงเพื่อคำนวณ timeout — js_tick_select_all คืน checkbox count ของ table
+    # ซึ่งไม่สัมพันธ์กับจำนวนออเดอร์ในหน้านี้ (บาง platform ไม่มี checkbox ต่อแถวเลย)
+    return await page.evaluate("""
+        () => document.querySelector('#main-table tbody[name=output]')?.querySelectorAll('tr').length || 0
+    """)
+
+
+async def _set_full_tax_filter(page, value: str) -> bool:
+    """value: '1' (Full Tax/ETAX) หรือ '0' (ปกติ) — คืน False ถ้าไม่มี filter นี้ในหน้า (เช่น TikTok)"""
+    return bool(await page.evaluate("""
+        (value) => {
+            const sel = document.getElementById('full_tax');
+            if (!sel) return false;
+            sel.value = value;
+            sel.dispatchEvent(new Event('change', {bubbles: true}));
+            return true;
+        }
+    """, value))
+
+
+async def _full_invoice_download(page, shop: dict, order_count: int, signal: _Signal) -> bool:
+    """Select All แล้วกด FULL TAX DOWNLOAD to TRCLOUD (sync_trcloud) — ใช้ order_count คำนวณ timeout"""
+    platform = shop["platform"]
+    shop_id  = shop["api_id"]
+    name     = shop["name"]
+
     log(f"  → FULL INVOICE: Select All")
     try:
         await js_tick_select_all(page)
         await page.wait_for_timeout(300)
     except Exception as e:
         log(f"    ⚠ Select All: {e}")
-
-    # main-table แสดงผล report ทั้งหมด ไม่มี checkbox ต่อแถว (sync ทีเดียวทั้ง batch)
-    # นับจำนวนแถวจริงเพื่อคำนวณ timeout ให้ตรงกับปริมาณออเดอร์ — js_tick_select_all คืนค่า
-    # checkbox count ของ table ซึ่งไม่สัมพันธ์กับจำนวนออเดอร์ในหน้านี้
-    order_count = await page.evaluate("""
-        () => document.querySelector('#main-table tbody[name=output]')?.querySelectorAll('tr').length || 0
-    """)
-    log(f"    Report rows: {order_count}")
-
-    if order_count == 0:
-        log(f"  ✅ FULL INVOICE: no orders for {sync_date} — skip")
-        return True
 
     log(f"  → FULL TAX DOWNLOAD to TRCLOUD")
     try:
@@ -1228,6 +1260,163 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
         log(f"  ❌ FULL INVOICE failed: {e}")
         await _screenshot(page, f"error_{platform}{shop_id}_full_invoice")
         return False
+
+
+async def get_shop_invoice_settings(page, platform: str, shop_id: int):
+    """อ่านค่า Prefix [Full Tax] (prefix_iv) + Contact Name (contact_name) ปัจจุบันจากหน้า manage-shop"""
+    url_tpl = SHOP_SETTINGS_ENDPOINTS.get(platform)
+    if not url_tpl:
+        return None
+    if not await _safe_goto(page, url_tpl.format(shop_id=shop_id)):
+        log(f"    ❌ Page load timeout (manage-shop, read settings)")
+        return None
+    return await page.evaluate("""
+        () => {
+            const iv = document.querySelector('input[name=prefix_iv]');
+            const cn = document.querySelector('select[name=contact_name]');
+            return {prefix_iv: iv ? iv.value : null, contact_name: cn ? cn.value : null};
+        }
+    """)
+
+
+async def set_shop_invoice_settings(page, platform: str, shop_id: int, prefix_value: str, contact_name_value: str) -> bool:
+    """
+    ตั้งค่า Prefix [Full Tax] (prefix_iv, text) + Contact Name (contact_name, select)
+    แล้วกด Save [F2] — ต้องอยู่ที่หน้า manage-shop อยู่แล้ว
+    """
+    url_tpl = SHOP_SETTINGS_ENDPOINTS.get(platform)
+    if not url_tpl:
+        return False
+    if not await _safe_goto(page, url_tpl.format(shop_id=shop_id)):
+        log(f"    ❌ Page load timeout (manage-shop, set settings)")
+        return False
+
+    fields_set = await page.evaluate("""
+        ([prefixValue, contactValue]) => {
+            const iv = document.querySelector('input[name=prefix_iv]');
+            const cn = document.querySelector('select[name=contact_name]');
+            if (!iv || !cn) return false;
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            setter.call(iv, prefixValue);
+            iv.dispatchEvent(new Event('input', {bubbles: true}));
+            iv.dispatchEvent(new Event('change', {bubbles: true}));
+            cn.value = contactValue;
+            cn.dispatchEvent(new Event('change', {bubbles: true}));
+            return true;
+        }
+    """, [prefix_value, contact_name_value])
+    if not fields_set:
+        log(f"    ⚠ prefix_iv / contact_name field not found")
+        return False
+
+    saved = await page.evaluate("""
+        () => {
+            const a = Array.from(document.querySelectorAll('a')).find(
+                x => (x.getAttribute('onclick') || '').includes('save_function')
+            );
+            if (a) { a.click(); return true; }
+            return false;
+        }
+    """)
+    if not saved:
+        log(f"    ⚠ Save [F2] button not found")
+        return False
+
+    await page.wait_for_timeout(1500)
+    log(f"    ✓ prefix_iv → {prefix_value}, contact_name → {contact_name_value} (saved)")
+    return True
+
+
+async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Signal) -> bool:
+    """
+    โหลด SO แบบ FULL INVOICE (ปุ่ม "FULL TAX DOWNLOAD to TRCLOUD" / sync_trcloud())
+    รันต่อจาก sync order ของวันนั้นเสร็จแล้ว
+
+    TikTok: ไม่มี filter "Full Tax" — download รวมทีเดียว
+    Shopee/Lazada: มี filter "Full Tax" (1=ลูกค้าขอ ETAX, 0=บิลปกติ) ซึ่งต้องใช้ prefix
+    เอกสาร (ETIV/ONIV) และ Contact Name (Follow Platform/Follow TRCLOUD Master) ต่างกัน —
+    ต้อง sync แยก batch ตาม filter และสลับ setting ที่หน้า manage-shop ก่อน download
+    แต่ละ batch แล้วสลับกลับเป็นค่า default (ONIV / Follow TRCLOUD Master) เมื่อจบ
+    """
+    platform = shop["platform"]
+    shop_id  = shop["api_id"]
+
+    url_tpl = FULL_INVOICE_ENDPOINTS.get(platform)
+    if not url_tpl:
+        return True  # platform นี้ยังไม่รองรับ FULL INVOICE — ข้าม ไม่ถือว่า fail
+
+    url = url_tpl.format(shop_id=shop_id)
+    if not await _safe_goto(page, url):
+        log(f"  ❌ Page load timeout (FULL INVOICE): {url}")
+        return False
+
+    log(f"  → FULL INVOICE: Set date: {sync_date}")
+    if not await set_date_field(page, sync_date):
+        log(f"    ⚠ Date field not found — using default date")
+
+    if platform not in SHOP_SETTINGS_ENDPOINTS:
+        log(f"  → FULL INVOICE: RUN (generate report)")
+        order_count = await _run_report_and_count(page)
+        log(f"    Report rows: {order_count}")
+        if order_count == 0:
+            log(f"  ✅ FULL INVOICE: no orders for {sync_date} — skip")
+            return True
+        return await _full_invoice_download(page, shop, order_count, signal)
+
+    # ── Shopee/Lazada: แยก batch ตาม Full Tax filter (ETAX ก่อน แล้วค่อยปกติ) ──
+    ETAX_SETTINGS   = {"prefix": PREFIX_IV_ETAX,   "contact_name": CONTACT_NAME_FOLLOW_PLATFORM}
+    NORMAL_SETTINGS = {"prefix": PREFIX_IV_NORMAL, "contact_name": CONTACT_NAME_FOLLOW_MASTER}
+
+    left_on_etax_settings = False
+    for tax_flag, target, label in [("1", ETAX_SETTINGS, "ETAX"), ("0", NORMAL_SETTINGS, "Normal")]:
+        log(f"  → FULL INVOICE: Filter Full Tax = {tax_flag} ({label})")
+        if not await _set_full_tax_filter(page, tax_flag):
+            log(f"    ⚠ Full Tax filter not found — fallback เป็น single batch")
+            order_count = await _run_report_and_count(page)
+            if order_count == 0:
+                return True
+            return await _full_invoice_download(page, shop, order_count, signal)
+
+        order_count = await _run_report_and_count(page)
+        log(f"    Report rows ({label}): {order_count}")
+        if order_count == 0:
+            log(f"    No {label} orders for {sync_date} — skip")
+            continue
+
+        current = await get_shop_invoice_settings(page, platform, shop_id)
+        if current is None:
+            log(f"  ❌ Failed to read manage-shop settings for {label}")
+            return False
+        needs_update = (current["prefix_iv"] != target["prefix"] or current["contact_name"] != target["contact_name"])
+        if needs_update:
+            log(f"    → Settings → prefix={target['prefix']}, contact_name={target['contact_name']} (manage-shop)")
+            if not await set_shop_invoice_settings(page, platform, shop_id, target["prefix"], target["contact_name"]):
+                log(f"  ❌ Failed to update manage-shop settings for {label}")
+                return False
+            left_on_etax_settings = (label == "ETAX")
+        else:
+            log(f"    ✓ Settings already prefix={target['prefix']}, contact_name={target['contact_name']}")
+            left_on_etax_settings = False
+
+        # get/set_shop_invoice_settings navigate ออกไปหน้า manage-shop เสมอ — ต้องกลับมาตั้ง
+        # date + filter + RUN ใหม่ทุกครั้งไม่ว่าจะอัพเดต settings หรือไม่ก็ตาม
+        if not await _safe_goto(page, url):
+            log(f"  ❌ Page load timeout (FULL INVOICE, re-nav): {url}")
+            return False
+        await set_date_field(page, sync_date)
+        await _set_full_tax_filter(page, tax_flag)
+        order_count = await _run_report_and_count(page)
+
+        if not await _full_invoice_download(page, shop, order_count, signal):
+            return False
+
+    if left_on_etax_settings:
+        # จบ loop ด้วย settings ของ ETAX ค้างไว้ (เช่นวันนั้นไม่มี Normal orders เลย) — สลับกลับให้ปลอดภัย
+        log(f"  → Reset manage-shop settings back to Normal (safety)")
+        if not await set_shop_invoice_settings(page, platform, shop_id, NORMAL_SETTINGS["prefix"], NORMAL_SETTINGS["contact_name"]):
+            log(f"  ⚠ Could not reset settings — กรุณาเช็ค manage-shop settings ด้วยตนเอง")
+
+    return True
 
 
 # ─────────────────────────────────────────────
@@ -1331,6 +1520,10 @@ async def sync_lazada_shop(page, shop: dict, sync_date: str = None, signal: _Sig
     except Exception as e:
         log(f"  ❌ Step 3 failed: {e}")
         await _screenshot(page, f"error_lazada{shop_id}_step3")
+        return False
+
+    # ── FULL INVOICE (โหลด SO เข้า TRCloud) ──
+    if not await sync_full_invoice_step(page, shop, sync_date or str(date.today()), signal):
         return False
 
     return True

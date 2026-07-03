@@ -2,6 +2,15 @@
 setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
 
+:: ── วิธีใช้งานเมนู (สั้นๆ) ────────────────────
+:: ORDER        : ดึงออเดอร์เข้า TRCloud (Step 1+2+3) แล้วโหลด FULL INVOICE (IV) ต่อทันที
+::                ต้องระบุ platform + ช่วงวันที่
+:: RV           : sync ใบเสร็จรับเงิน (RECEIPT [RV]) ต้องระบุ platform + ช่วงวันที่
+:: ALL          : รัน ORDER แล้วต่อด้วย RV ในการรันครั้งเดียว
+:: STATUS       : อัพเดทสถานะออเดอร์เท่านั้น (Step 1) ย้อนหลัง 14 วันอัตโนมัติ ไม่ต้องใส่วันที่
+:: RETURN ITEM  : sync ออเดอร์ตีคืน (Step 6) เฉพาะ Shopee ต้องระบุช่วงวันที่
+:: ────────────────────────────────────────────
+
 :: ── Auto-update from GitHub ──────────────────
 git -C "%~dp0" pull --ff-only --quiet 2>nul && (
     echo [git] Updated from GitHub
@@ -15,11 +24,14 @@ echo  TRCloud Browser Sync - MENU
 echo ============================================
 echo.
 echo Select function (1 char or number):
-echo   [O] or [1] = Sync ORDER         (Step 1+2+3)
+echo   [O] or [1] = Sync ORDER         (Step 1+2+3 + FULL INVOICE)
 echo   [R] or [2] = Sync RV            (Receipt)
 echo   [A] or [3] = Sync ALL           (ORDER + RV)
 echo   [S] or [4] = Sync STATUS        (Step 1 only, D-14 auto)
 echo   [N] or [5] = Sync RETURN ITEM   (Step 6, Shopee only)
+echo.
+echo   NOTE: ORDER now auto-loads FULL INVOICE (IV) to TRCloud after
+echo         order sync of each shop/day — takes longer on busy days.
 echo.
 set /p FUNC_CHOICE=Function:
 if "%FUNC_CHOICE%"=="" (
@@ -189,7 +201,7 @@ pause
 exit /b 1
 
 :RUN_ORDER
-echo [ORDER] Running...
+echo [ORDER] Running... (includes FULL INVOICE download to TRCloud)
 %BASE_CMD% %PLATFORM_ARG%
 goto END_RUN
 
@@ -199,7 +211,7 @@ echo [RV] Running...
 goto END_RUN
 
 :RUN_ALL
-echo [ALL] Step 1/2: ORDER
+echo [ALL] Step 1/2: ORDER (includes FULL INVOICE download to TRCloud)
 %BASE_CMD% %PLATFORM_ARG%
 echo.
 echo [ALL] Step 2/2: RV

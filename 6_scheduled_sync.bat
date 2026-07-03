@@ -2,6 +2,12 @@
 chcp 65001 > nul
 setlocal enabledelayedexpansion
 
+:: ── วิธีใช้งาน (สั้นๆ) ────────────────────────
+:: ใช้กับ Windows Task Scheduler รันอัตโนมัติทุกวัน (ไม่มี prompt โต้ตอบ)
+:: sync ย้อนหลัง 1 วัน (D-1) ทุก platform: ORDER (รวม FULL INVOICE) แล้วต่อด้วย RV
+:: จบแล้วส่งอีเมลสรุปผลรวมครั้งเดียว — ไม่ต้อง config อะไรเพิ่ม แค่ตั้ง schedule ให้รันไฟล์นี้
+:: ────────────────────────────────────────────
+
 cd /d "%~dp0"
 
 :: Ensure Git is reachable (Task Scheduler uses minimal PATH)
@@ -30,7 +36,7 @@ echo  Target date: %YESTERDAY%
 echo ============================================================
 echo.
 
-:: ORDER sync
+:: ORDER sync (includes FULL INVOICE download to TRCloud per shop/day)
 echo [ORDER] Start: %time%
 python "%~dp0trcloud_sync_browser.py" --start-date %YESTERDAY% --end-date %YESTERDAY% --no-notify
 set ORDER_EXIT=%ERRORLEVEL%
