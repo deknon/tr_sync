@@ -7,7 +7,7 @@ chcp 65001 >nul
 ::                ต้องระบุ platform + ช่วงวันที่
 :: RV           : sync ใบเสร็จรับเงิน (RECEIPT [RV]) ต้องระบุ platform + ช่วงวันที่
 :: ALL          : รัน ORDER แล้วต่อด้วย RV ในการรันครั้งเดียว
-:: STATUS       : อัพเดทสถานะออเดอร์เท่านั้น (Step 1) ย้อนหลัง 14 วันอัตโนมัติ ไม่ต้องใส่วันที่
+:: STATUS       : อัพเดทสถานะออเดอร์เท่านั้น (Step 1, Shopee เพิ่ม Step 2 Sync Items) ย้อนหลัง 14 วันอัตโนมัติ ไม่ต้องใส่วันที่
 :: RETURN ITEM  : sync ออเดอร์ตีคืน (Step 6) เฉพาะ Shopee ต้องระบุช่วงวันที่
 :: ────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ echo Select function (1 char or number):
 echo   [O] or [1] = Sync ORDER         (Step 1+2+3 + FULL INVOICE)
 echo   [R] or [2] = Sync RV            (Receipt)
 echo   [A] or [3] = Sync ALL           (ORDER + RV)
-echo   [S] or [4] = Sync STATUS        (Step 1 only, D-14 auto)
+echo   [S] or [4] = Sync STATUS        (Step 1, D-14 auto; Shopee +Step 2 Items)
 echo   [N] or [5] = Sync RETURN ITEM   (Step 6, Shopee only)
 echo.
 echo   NOTE: ORDER now auto-loads FULL INVOICE (IV) to TRCloud after
@@ -168,8 +168,8 @@ set BASE_RETURN_CMD=python "%~dp0trcloud_sync_browser.py" --return-item --start-
 echo.
 echo ============================================
 echo Start sync...
-if /I "%FUNC_CHOICE%"=="S" (echo Function : STATUS ^(Step 1 only, D-14 auto^))
-if /I "%FUNC_CHOICE%"=="4" (echo Function : STATUS ^(Step 1 only, D-14 auto^))
+if /I "%FUNC_CHOICE%"=="S" (echo Function : STATUS ^(Step 1, D-14 auto; Shopee +Step 2 Items^))
+if /I "%FUNC_CHOICE%"=="4" (echo Function : STATUS ^(Step 1, D-14 auto; Shopee +Step 2 Items^))
 if /I "%FUNC_CHOICE%"=="N" (echo Function : RETURN ITEM ^(Step 6, Shopee^))
 if /I "%FUNC_CHOICE%"=="5" (echo Function : RETURN ITEM ^(Step 6, Shopee^))
 if /I "%FUNC_CHOICE%"=="O" (echo Function : ORDER)
@@ -219,7 +219,7 @@ echo [ALL] Step 2/2: RV
 goto END_RUN
 
 :RUN_STATUS
-echo [STATUS] Running... (D-14 auto)
+echo [STATUS] Running... (D-14 auto; Shopee +Step 2 Items)
 %BASE_STATUS_CMD% %PLATFORM_ARG%
 goto END_RUN
 

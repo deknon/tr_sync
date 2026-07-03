@@ -718,7 +718,7 @@ async def sync_shopee_status_only(page, shop: dict, sync_date: str = None, signa
         if not await set_date_field(page, sync_date):
             log(f"    ⚠ Date field not found — using default date")
 
-    log(f"  → Step 1 only: Sync Document + Status")
+    log(f"  → Step 1: Sync Document + Status")
     try:
         prepare_complete_event(signal)
         if not await js_click_button(page, "SYNC DOCUMENT"):
@@ -728,10 +728,36 @@ async def sync_shopee_status_only(page, shop: dict, sync_date: str = None, signa
         await page.wait_for_timeout(1000)
         await wait_for_complete_popup(page, shop_id, signal, timeout=180000)
         log(f"  ✅ Step 1 OK")
-        return True
     except Exception as e:
         log(f"  ❌ Step 1 failed: {e}")
         await _screenshot(page, f"error_shopee{shop_id}_status_step1")
+        return False
+
+    # ── Tick Select All (Step 2) ──
+    log(f"  → Tick Select All")
+    order_count = 0
+    try:
+        order_count = await js_tick_select_all(page)
+        log(f"    {'✓ Select All done' if order_count else '⚠ No checkbox found — proceeding to Step 2'}")
+        await page.wait_for_timeout(200)
+    except Exception as e:
+        log(f"    ⚠ Select All: {e}")
+
+    # ── Step 2: SYNC ITEMs ──
+    log(f"  → Step 2: Sync Items")
+    try:
+        prepare_complete_event(signal)
+        if not await js_click_button(page, "SYNC ITEMs"):
+            log(f"  ❌ Step 2 button not found")
+            await _screenshot(page, f"error_shopee{shop_id}_status_step2_notfound")
+            return False
+        await page.wait_for_timeout(1000)
+        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count))
+        log(f"  ✅ Step 2 OK")
+        return True
+    except Exception as e:
+        log(f"  ❌ Step 2 failed: {e}")
+        await _screenshot(page, f"error_shopee{shop_id}_status_step2")
         return False
 
 
@@ -2036,7 +2062,7 @@ def main():
     parser = argparse.ArgumentParser(description="TRCloud Browser Sync (Playwright)")
     parser.add_argument("--setup",        action="store_true",  help="Login และ save session (รันครั้งแรก)")
     parser.add_argument("--rv",           action="store_true",  help="Sync RECEIPT [RV] (เฉพาะ Step 1)")
-    parser.add_argument("--status",       action="store_true",  help="Sync STATUS only (Step 1, auto D-14 ถึงวันนี้)")
+    parser.add_argument("--status",       action="store_true",  help="Sync STATUS only (Step 1, auto D-14 ถึงวันนี้; Shopee เพิ่ม Step 2 Sync Items)")
     parser.add_argument("--return-item",  action="store_true",  dest="return_item", help="Sync RETURN ITEM (Step 6, Shopee only, TO_RETURN+RETURNED)")
     parser.add_argument("--lookback",     type=int, default=14, help="จำนวนวันย้อนหลังสำหรับ --status (default: 14)")
     parser.add_argument("--shop",         type=int,             help="Sync เฉพาะ shop id นี้")
