@@ -165,6 +165,45 @@ _log_mode = "RUN"
 _pc_name  = socket.gethostname()
 
 
+# ─────────────────────────────────────────────
+# FULL INVOICE REPORT (สรุปว่าโหลดบิลเข้า TRCloud ครบหรือยัง)
+# ─────────────────────────────────────────────
+_full_invoice_log = []
+
+
+def record_full_invoice_result(shop: dict, sync_date: str, label: str, order_count: int, pending, ok: bool):
+    _full_invoice_log.append({
+        "shop": shop["name"], "platform": shop["platform"], "date": sync_date,
+        "label": label, "order_count": order_count, "pending": pending, "ok": ok,
+    })
+
+
+def write_full_invoice_report():
+    """เขียนไฟล์สรุป FULL INVOICE แยกต่างหาก — คืน path ถ้ามีข้อมูล ไม่งั้นคืน None"""
+    if not _full_invoice_log:
+        return None
+    LOG_DIR_TEXT.mkdir(parents=True, exist_ok=True)
+    run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path = LOG_DIR_TEXT / f"full_invoice_report_{_pc_name}_{run_ts}.txt"
+
+    total_pending = sum(r["pending"] for r in _full_invoice_log if isinstance(r["pending"], int))
+    not_ok = [r for r in _full_invoice_log if not r["ok"]]
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"FULL INVOICE Report — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("=" * 70 + "\n")
+        for r in _full_invoice_log:
+            status = "OK" if r["ok"] else f"⚠ PENDING={r['pending']}"
+            f.write(f"{r['shop']:<22} | {r['platform']:<7} | {r['date']} | {r['label']:<6} "
+                    f"| {r['order_count']:>5} orders | {status}\n")
+        f.write("=" * 70 + "\n")
+        f.write(f"Summary: {len(_full_invoice_log)} batch(es), {total_pending} pending total, "
+                f"{len(not_ok)} batch(es) not complete\n")
+
+    _full_invoice_log.clear()
+    return path
+
+
 def cleanup_old_logs(days: int = 7):
     """Delete text and photo log files older than `days` days."""
     cutoff = datetime.now().timestamp() - days * 86400
@@ -1159,6 +1198,45 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
 # ─────────────────────────────────────────────
 # FULL INVOICE (โหลด SO เข้า TRCloud — FULL TAX)
 # ─────────────────────────────────────────────
+async def set_report_date_filter(page, date_str: str) -> bool:
+    """
+    ตั้งค่า filter วันที่ที่หน้า report (FULL INVOICE) แบบ single-date (Date mode) โดยเฉพาะ
+    หน้านี้เลือก filter วันที่ได้หลายแบบ (date_month_filter: Date/Month/Date Range/Year) ซึ่งมี
+    input คนละตัว (date / month+year / date_from+date_to / year) — ต้องบังคับโหมดเป็น 'day'
+    ก่อนเซ็ต #date โดยตรง ไม่ใช้ generic set_date_field เพราะจะชนกับ date_from/date_to ได้
+    """
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        trcloud_date = d.strftime("%d/%m/%Y")
+    except Exception:
+        return False
+
+    result = await page.evaluate("""
+        (dateValue) => {
+            const modeSel = document.getElementById('date_month_filter');
+            if (modeSel) {
+                modeSel.value = 'day';
+                modeSel.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+            const dateInput = document.getElementById('date');
+            if (!dateInput) return null;
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            setter.call(dateInput, dateValue);
+            dateInput.dispatchEvent(new Event('input', {bubbles: true}));
+            dateInput.dispatchEvent(new Event('change', {bubbles: true}));
+            return dateInput.value;
+        }
+    """, trcloud_date)
+
+    if result:
+        log(f"    📅 Report date set: {result} (mode=Date)")
+        await page.wait_for_timeout(1000)
+        await page.keyboard.press("Enter")
+        await page.wait_for_timeout(1500)
+        return True
+    return False
+
+
 async def _safe_goto(page, url: str, timeout: int = 30000, retries: int = 2) -> bool:
     """
     page.goto ที่ทน 'interrupted by another navigation' — เกิดขึ้นเมื่อ Save [F2] ที่หน้า
@@ -1220,7 +1298,27 @@ async def _set_full_tax_filter(page, value: str) -> bool:
     """, value))
 
 
-async def _full_invoice_download(page, shop: dict, order_count: int, signal: _Signal) -> bool:
+async def _set_outstanding_filter(page, value: str) -> bool:
+    """value: 'yes' (เฉพาะที่ยังไม่โหลดเข้า TRCloud) หรือ 'no' (แสดงทั้งหมด)"""
+    return bool(await page.evaluate("""
+        (value) => {
+            const sel = document.getElementById('outstanding');
+            if (!sel) return false;
+            sel.value = value;
+            sel.dispatchEvent(new Event('change', {bubbles: true}));
+            return true;
+        }
+    """, value))
+
+
+async def _count_outstanding(page) -> int:
+    """เช็คว่าโหลดข้อมูลบิลเข้า TRCloud ครบหรือยัง — filter Outstanding=YES แล้ว RUN นับแถวที่เหลือ"""
+    await _set_outstanding_filter(page, "yes")
+    return await _run_report_and_count(page)
+
+
+async def _full_invoice_download(page, shop: dict, order_count: int, signal: _Signal,
+                                  sync_date: str = "", label: str = "All") -> bool:
     """Select All แล้วกด FULL TAX DOWNLOAD to TRCLOUD (sync_trcloud) — ใช้ order_count คำนวณ timeout"""
     platform = shop["platform"]
     shop_id  = shop["api_id"]
@@ -1253,12 +1351,24 @@ async def _full_invoice_download(page, shop: dict, order_count: int, signal: _Si
         await page.wait_for_timeout(1000)
         await wait_for_modal_and_confirm(page, name)
         await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count))
-        log(f"  ✅ FULL INVOICE OK")
+
+        # ── เช็คว่าโหลดครบหรือยัง: filter Outstanding=YES แล้วนับแถวที่ยังไม่โหลด ──
+        pending = await _count_outstanding(page)
+        await _set_outstanding_filter(page, "no")  # คืน filter เป็น Show All
+        if pending > 0:
+            log(f"  ⚠ FULL INVOICE: ยังเหลือ {pending}/{order_count} ออเดอร์ที่ยังไม่โหลดเข้า TRCloud (Outstanding)")
+            await _screenshot(page, f"error_{platform}{shop_id}_full_invoice_outstanding")
+            record_full_invoice_result(shop, sync_date, label, order_count, pending, ok=False)
+            return False
+
+        log(f"  ✅ FULL INVOICE OK — โหลดครบ {order_count} รายการ (Outstanding = 0)")
+        record_full_invoice_result(shop, sync_date, label, order_count, 0, ok=True)
         return True
 
     except Exception as e:
         log(f"  ❌ FULL INVOICE failed: {e}")
         await _screenshot(page, f"error_{platform}{shop_id}_full_invoice")
+        record_full_invoice_result(shop, sync_date, label, order_count, "?", ok=False)
         return False
 
 
@@ -1351,7 +1461,7 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
         return False
 
     log(f"  → FULL INVOICE: Set date: {sync_date}")
-    if not await set_date_field(page, sync_date):
+    if not await set_report_date_filter(page, sync_date):
         log(f"    ⚠ Date field not found — using default date")
 
     if platform not in SHOP_SETTINGS_ENDPOINTS:
@@ -1360,8 +1470,9 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
         log(f"    Report rows: {order_count}")
         if order_count == 0:
             log(f"  ✅ FULL INVOICE: no orders for {sync_date} — skip")
+            record_full_invoice_result(shop, sync_date, "All", 0, 0, ok=True)
             return True
-        return await _full_invoice_download(page, shop, order_count, signal)
+        return await _full_invoice_download(page, shop, order_count, signal, sync_date, "All")
 
     # ── Shopee/Lazada: แยก batch ตาม Full Tax filter (ETAX ก่อน แล้วค่อยปกติ) ──
     ETAX_SETTINGS   = {"prefix": PREFIX_IV_ETAX,   "contact_name": CONTACT_NAME_FOLLOW_PLATFORM}
@@ -1374,13 +1485,15 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
             log(f"    ⚠ Full Tax filter not found — fallback เป็น single batch")
             order_count = await _run_report_and_count(page)
             if order_count == 0:
+                record_full_invoice_result(shop, sync_date, "All", 0, 0, ok=True)
                 return True
-            return await _full_invoice_download(page, shop, order_count, signal)
+            return await _full_invoice_download(page, shop, order_count, signal, sync_date, "All")
 
         order_count = await _run_report_and_count(page)
         log(f"    Report rows ({label}): {order_count}")
         if order_count == 0:
             log(f"    No {label} orders for {sync_date} — skip")
+            record_full_invoice_result(shop, sync_date, label, 0, 0, ok=True)
             continue
 
         current = await get_shop_invoice_settings(page, platform, shop_id)
@@ -1403,11 +1516,11 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
         if not await _safe_goto(page, url):
             log(f"  ❌ Page load timeout (FULL INVOICE, re-nav): {url}")
             return False
-        await set_date_field(page, sync_date)
+        await set_report_date_filter(page, sync_date)
         await _set_full_tax_filter(page, tax_flag)
         order_count = await _run_report_and_count(page)
 
-        if not await _full_invoice_download(page, shop, order_count, signal):
+        if not await _full_invoice_download(page, shop, order_count, signal, sync_date, label):
             return False
 
     if left_on_etax_settings:
@@ -1667,6 +1780,10 @@ async def run_sync(target_id: int = None, platform: str = None, visible: bool = 
                 log(f"         ❌ Failed: {', '.join(failed)}")
             log(f"{'='*55}")
             log(f"Log saved to: logs\\text\\{log_path.name}")
+
+            full_invoice_report_path = write_full_invoice_report()
+            if full_invoice_report_path:
+                log(f"FULL INVOICE report: logs\\text\\{full_invoice_report_path.name}")
 
             if not no_notify:
                 ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
