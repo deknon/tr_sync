@@ -273,14 +273,27 @@ if defined PARALLEL_MODE (
 goto END_RUN
 
 :: ── Spawn one platform per window (Shopee / Tiktok / Lazada) ──
+:: หมายเหตุ: path ของโปรเจกต์มีเว้นวรรค (เช่น "OneDrive - Gadget Villa Co., Ltd")
+:: ถ้าใช้ cmd /k "คำสั่งยาว & pause" ตรงๆ จะโดนบั๊ก quote-parsing ของ cmd.exe
+:: (ตัด quote รอบ path ทิ้งจนพังตรง " - Gadget...") จึงต้องเขียนเป็นไฟล์ .bat
+:: ชั่วคราวแยกต่อ platform แล้ว start ไฟล์นั้นแทน เพื่อเลี่ยงปัญหานี้
 :SPAWN_PARALLEL
-setlocal
+setlocal EnableDelayedExpansion
 set "P_LABEL=%~1"
 set "P_CMD=%~2"
 echo [%P_LABEL%] Parallel mode: launching Shopee / Tiktok / Lazada in separate windows...
-start "TRCloud %P_LABEL% - Shopee" cmd /k "%P_CMD% --platform shopee & echo. & echo [%P_LABEL% - Shopee] Done. & pause"
-start "TRCloud %P_LABEL% - Tiktok" cmd /k "%P_CMD% --platform tiktok & echo. & echo [%P_LABEL% - Tiktok] Done. & pause"
-start "TRCloud %P_LABEL% - Lazada" cmd /k "%P_CMD% --platform lazada & echo. & echo [%P_LABEL% - Lazada] Done. & pause"
+for %%G in (shopee tiktok lazada) do (
+    set "TMPBAT=%TEMP%\trc_parallel_%P_LABEL%_%%G.bat"
+    > "!TMPBAT!" (
+        echo @echo off
+        echo chcp 65001 ^>nul
+        echo %P_CMD% --platform %%G
+        echo echo.
+        echo echo [%P_LABEL% - %%G] Done.
+        echo pause
+    )
+    start "TRCloud %P_LABEL% - %%G" cmd /k "!TMPBAT!"
+)
 endlocal
 goto :eof
 
