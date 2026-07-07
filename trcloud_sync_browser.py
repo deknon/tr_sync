@@ -2056,6 +2056,126 @@ async def run_sync_return(start_date: str, end_date: str, visible: bool = False,
 
 
 # ─────────────────────────────────────────────
+# FULL INVOICE ONLY (โหลด SO เข้า TRCloud โดยไม่ sync ก่อน)
+# ─────────────────────────────────────────────
+async def run_sync_full_invoice(start_date: str, end_date: str, platform: str = None,
+                                target_id: int = None, visible: bool = False,
+                                no_notify: bool = False):
+    """
+    โหลด FULL INVOICE (SO → TRCloud) ตรงๆ โดยไม่ต้องรัน Step 1/2/3 ก่อน
+    ใช้กรณีข้อมูล TRCloud sync ครบอยู่แล้ว แค่ต้องการโหลดบิลเข้าใหม่/ซ้ำ
+    """
+    if not SESSION_FILE.exists():
+        log("❌ No session found. Please run: python trcloud_sync_browser.py --setup")
+        return
+
+    try:
+        d_start = date.fromisoformat(start_date)
+        d_end   = date.fromisoformat(end_date)
+    except ValueError:
+        log(f"❌ Invalid date: {start_date} / {end_date}")
+        return
+
+    if d_start > d_end:
+        log("❌ start-date must be <= end-date")
+        return
+
+    log_path = init_log("FULLINVOICE")
+    total_days = (d_end - d_start).days + 1
+
+    if target_id is not None:
+        shops = [s for s in SHOPS if s["api_id"] == target_id]
+    elif platform is not None:
+        shops = [s for s in SHOPS if s["platform"] == platform.lower()]
+    else:
+        shops = SHOPS
+
+    if not shops:
+        log("❌ No shops found")
+        close_log()
+        return
+
+    total   = len(shops) * total_days
+    success = 0
+    failed  = []
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=not visible,
+                slow_mo=100 if visible else 50,
+            )
+            context = await browser.new_context(
+                storage_state=str(SESSION_FILE),
+                viewport={"width": 1280, "height": 900},
+            )
+            page   = await context.new_page()
+            signal = _Signal()
+
+            async def handle_dialog(dialog):
+                log(f"    💬 Dialog: '{dialog.message}' → OK")
+                await dialog.accept()
+                if "complete" in dialog.message.lower():
+                    signal.set()
+            page.on("dialog", handle_dialog)
+
+            await page.goto(f"{APP_URL}/", wait_until="networkidle", timeout=30000)
+            if "login" in page.url.lower():
+                log("❌ Session expired. Please run --setup again")
+                await browser.close()
+                return
+
+            log(f"\n{'='*55}")
+            log(f"FULL INVOICE only (no sync) — {len(shops)} shop(s) × {total_days} day(s)")
+            log(f"Date range: {start_date} → {end_date}")
+            log(f"{'='*55}")
+
+            job_i   = 0
+            current = d_start
+            while current <= d_end:
+                log(f"\n{'─'*55}")
+                log(f"Date: {current}")
+                log(f"{'─'*55}")
+                for shop in shops:
+                    job_i += 1
+                    log(f"\n[{job_i}/{total}] {shop['name']} ({shop['platform'].upper()}) FULL INVOICE")
+                    ok = await sync_full_invoice_step(page, shop, str(current), signal)
+                    if ok:
+                        success += 1
+                    else:
+                        failed.append(f"{shop['name']}@{current}")
+                current += timedelta(days=1)
+
+            log(f"\n{'='*55}")
+            log(f"Summary FULL INVOICE: ✅ {success}/{total} succeeded")
+            if failed:
+                log(f"                     ❌ Failed: {', '.join(failed)}")
+            log(f"{'='*55}")
+            log(f"Log saved to: logs\\text\\{log_path.name}")
+
+            full_invoice_report_path = write_full_invoice_report()
+            if full_invoice_report_path:
+                log(f"FULL INVOICE report: logs\\text\\{full_invoice_report_path.name}")
+
+            if not no_notify:
+                ts_done = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if failed:
+                    notify_gmail(
+                        f"[TRCloud FULL INVOICE] ❌ มี {len(failed)} รายการล้มเหลว ({ts_done})",
+                        f"สรุป FULL INVOICE: {success}/{total} สำเร็จ\n\nล้มเหลว:\n" + "\n".join(f"  - {f}" for f in failed) + f"\n\nLog: logs\\text\\{log_path.name}",
+                    )
+                else:
+                    notify_gmail(
+                        f"[TRCloud FULL INVOICE] ✅ {success}/{total} สำเร็จ ({ts_done})",
+                        f"สรุป FULL INVOICE: {success}/{total} สำเร็จทั้งหมด\n\nLog: logs\\text\\{log_path.name}",
+                    )
+
+            await browser.close()
+    finally:
+        close_log()
+
+
+# ─────────────────────────────────────────────
 # ENTRY POINT
 # ─────────────────────────────────────────────
 def main():
@@ -2064,6 +2184,7 @@ def main():
     parser.add_argument("--rv",           action="store_true",  help="Sync RECEIPT [RV] (เฉพาะ Step 1)")
     parser.add_argument("--status",       action="store_true",  help="Sync STATUS only (Step 1, auto D-14 ถึงวันนี้; Shopee เพิ่ม Step 2 Sync Items)")
     parser.add_argument("--return-item",  action="store_true",  dest="return_item", help="Sync RETURN ITEM (Step 6, Shopee only, TO_RETURN+RETURNED)")
+    parser.add_argument("--full-invoice", action="store_true",  dest="full_invoice", help="โหลด FULL INVOICE (SO → TRCloud) ตรงๆ โดยไม่ sync Step 1/2/3 ก่อน")
     parser.add_argument("--lookback",     type=int, default=14, help="จำนวนวันย้อนหลังสำหรับ --status (default: 14)")
     parser.add_argument("--shop",         type=int,             help="Sync เฉพาะ shop id นี้")
     parser.add_argument("--platform",     choices=["shopee", "tiktok", "lazada"], help="Sync ทุก shop ของ platform")
@@ -2099,6 +2220,23 @@ def main():
             end_date=end_date,
             visible=args.visible,
             target_id=args.shop,
+            no_notify=args.no_notify,
+        ))
+
+    elif args.full_invoice:
+        start_date = args.start_date
+        end_date   = args.end_date
+        if not start_date or not end_date:
+            print("\nFULL INVOICE only mode (no sync, just download SO/IV to TRCloud)")
+            print("กรอกช่วงวันที่ (YYYY-MM-DD)")
+            start_date = input("Start date: ").strip()
+            end_date   = input("End date  : ").strip()
+        asyncio.run(run_sync_full_invoice(
+            start_date=start_date,
+            end_date=end_date,
+            platform=args.platform,
+            target_id=args.shop,
+            visible=args.visible,
             no_notify=args.no_notify,
         ))
 

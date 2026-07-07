@@ -9,6 +9,10 @@ chcp 65001 >nul
 :: ALL          : รัน ORDER แล้วต่อด้วย RV ในการรันครั้งเดียว
 :: STATUS       : อัพเดทสถานะออเดอร์เท่านั้น (Step 1, Shopee เพิ่ม Step 2 Sync Items) ย้อนหลัง 14 วันอัตโนมัติ ไม่ต้องใส่วันที่
 :: RETURN ITEM  : sync ออเดอร์ตีคืน (Step 6) เฉพาะ Shopee ต้องระบุช่วงวันที่
+:: FULL INVOICE : โหลด SO เข้า TRCloud ตรงๆ โดยไม่ sync Step 1/2/3 ก่อน (ข้อมูล sync ครบแล้ว
+::                แต่บิลยังไม่เข้า/ต้องโหลดซ้ำ) ต้องระบุ platform + ช่วงวันที่
+:: PARALLEL     : เลือก platform = [P]/[9] ใน ORDER/RV/ALL/STATUS/FULL INVOICE เพื่อรัน
+::                Shopee/Tiktok/Lazada พร้อมกันคนละหน้าต่าง
 :: ────────────────────────────────────────────
 
 :: ── Auto-update from GitHub ──────────────────
@@ -29,6 +33,7 @@ echo   [R] or [2] = Sync RV            (Receipt)
 echo   [A] or [3] = Sync ALL           (ORDER + RV)
 echo   [S] or [4] = Sync STATUS        (Step 1, D-14 auto; Shopee +Step 2 Items)
 echo   [N] or [5] = Sync RETURN ITEM   (Step 6, Shopee only)
+echo   [I] or [6] = Sync FULL INVOICE  (download SO to TRCloud only, no sync first)
 echo.
 echo   NOTE: ORDER now auto-loads FULL INVOICE (IV) to TRCloud after
 echo         order sync of each shop/day — takes longer on busy days.
@@ -49,10 +54,11 @@ if /I "%FUNC_CHOICE%"=="5" goto ASK_RETURN
 :: ── ORDER / RV / ALL — need platform + date ──
 echo.
 echo Select platform (1 char or number):
-echo   [X] or [0] = All platforms
+echo   [X] or [0] = All platforms          (1 process, sequential)
 echo   [S] or [1] = Shopee
 echo   [T] or [2] = Tiktok
 echo   [L] or [3] = Lazada
+echo   [P] or [9] = Parallel (all platforms, separate windows at once)
 echo.
 set /p PLATFORM_CHOICE=Platform:
 if "%PLATFORM_CHOICE%"=="" (
@@ -62,6 +68,7 @@ if "%PLATFORM_CHOICE%"=="" (
 )
 
 set PLATFORM_ARG=
+set PARALLEL_MODE=
 if /I "%PLATFORM_CHOICE%"=="X" set PLATFORM_ARG=
 if /I "%PLATFORM_CHOICE%"=="0" set PLATFORM_ARG=
 if /I "%PLATFORM_CHOICE%"=="S" set PLATFORM_ARG=--platform shopee
@@ -70,8 +77,10 @@ if /I "%PLATFORM_CHOICE%"=="T" set PLATFORM_ARG=--platform tiktok
 if /I "%PLATFORM_CHOICE%"=="2" set PLATFORM_ARG=--platform tiktok
 if /I "%PLATFORM_CHOICE%"=="L" set PLATFORM_ARG=--platform lazada
 if /I "%PLATFORM_CHOICE%"=="3" set PLATFORM_ARG=--platform lazada
+if /I "%PLATFORM_CHOICE%"=="P" set PARALLEL_MODE=1
+if /I "%PLATFORM_CHOICE%"=="9" set PARALLEL_MODE=1
 
-if /I not "%PLATFORM_CHOICE%"=="X" if /I not "%PLATFORM_CHOICE%"=="0" if /I not "%PLATFORM_CHOICE%"=="S" if /I not "%PLATFORM_CHOICE%"=="1" if /I not "%PLATFORM_CHOICE%"=="T" if /I not "%PLATFORM_CHOICE%"=="2" if /I not "%PLATFORM_CHOICE%"=="L" if /I not "%PLATFORM_CHOICE%"=="3" (
+if /I not "%PLATFORM_CHOICE%"=="X" if /I not "%PLATFORM_CHOICE%"=="0" if /I not "%PLATFORM_CHOICE%"=="S" if /I not "%PLATFORM_CHOICE%"=="1" if /I not "%PLATFORM_CHOICE%"=="T" if /I not "%PLATFORM_CHOICE%"=="2" if /I not "%PLATFORM_CHOICE%"=="L" if /I not "%PLATFORM_CHOICE%"=="3" if /I not "%PLATFORM_CHOICE%"=="P" if /I not "%PLATFORM_CHOICE%"=="9" (
     echo Invalid platform choice.
     pause
     exit /b 1
@@ -97,15 +106,17 @@ goto ASK_VISIBLE
 :ASK_STATUS
 echo.
 echo Select platform (1 char or number):
-echo   [X] or [0] = All platforms
+echo   [X] or [0] = All platforms          (1 process, sequential)
 echo   [S] or [1] = Shopee
 echo   [T] or [2] = Tiktok
 echo   [L] or [3] = Lazada
+echo   [P] or [9] = Parallel (all platforms, separate windows at once)
 echo.
 set /p PLATFORM_CHOICE=Platform:
 if "%PLATFORM_CHOICE%"=="" set PLATFORM_CHOICE=X
 
 set PLATFORM_ARG=
+set PARALLEL_MODE=
 if /I "%PLATFORM_CHOICE%"=="X" set PLATFORM_ARG=
 if /I "%PLATFORM_CHOICE%"=="0" set PLATFORM_ARG=
 if /I "%PLATFORM_CHOICE%"=="S" set PLATFORM_ARG=--platform shopee
@@ -114,6 +125,8 @@ if /I "%PLATFORM_CHOICE%"=="T" set PLATFORM_ARG=--platform tiktok
 if /I "%PLATFORM_CHOICE%"=="2" set PLATFORM_ARG=--platform tiktok
 if /I "%PLATFORM_CHOICE%"=="L" set PLATFORM_ARG=--platform lazada
 if /I "%PLATFORM_CHOICE%"=="3" set PLATFORM_ARG=--platform lazada
+if /I "%PLATFORM_CHOICE%"=="P" set PARALLEL_MODE=1
+if /I "%PLATFORM_CHOICE%"=="9" set PARALLEL_MODE=1
 
 set START_DATE=auto-D14
 set END_DATE=auto-D14
@@ -164,6 +177,7 @@ set BASE_CMD=python "%~dp0trcloud_sync_browser.py" --start-date %START_DATE% --e
 set BASE_RV_CMD=python "%~dp0trcloud_sync_browser.py" --rv --start-date %START_DATE% --end-date %END_DATE% %VISIBLE_ARG%
 set BASE_STATUS_CMD=python "%~dp0trcloud_sync_browser.py" --status %VISIBLE_ARG%
 set BASE_RETURN_CMD=python "%~dp0trcloud_sync_browser.py" --return-item --start-date %START_DATE% --end-date %END_DATE% %VISIBLE_ARG%
+set BASE_INVOICE_CMD=python "%~dp0trcloud_sync_browser.py" --full-invoice --start-date %START_DATE% --end-date %END_DATE% %VISIBLE_ARG%
 
 echo.
 echo ============================================
@@ -172,6 +186,8 @@ if /I "%FUNC_CHOICE%"=="S" (echo Function : STATUS ^(Step 1, D-14 auto; Shopee +
 if /I "%FUNC_CHOICE%"=="4" (echo Function : STATUS ^(Step 1, D-14 auto; Shopee +Step 2 Items^))
 if /I "%FUNC_CHOICE%"=="N" (echo Function : RETURN ITEM ^(Step 6, Shopee^))
 if /I "%FUNC_CHOICE%"=="5" (echo Function : RETURN ITEM ^(Step 6, Shopee^))
+if /I "%FUNC_CHOICE%"=="I" (echo Function : FULL INVOICE ^(download only, no sync^))
+if /I "%FUNC_CHOICE%"=="6" (echo Function : FULL INVOICE ^(download only, no sync^))
 if /I "%FUNC_CHOICE%"=="O" (echo Function : ORDER)
 if /I "%FUNC_CHOICE%"=="1" (echo Function : ORDER)
 if /I "%FUNC_CHOICE%"=="R" (echo Function : RV)
@@ -180,7 +196,7 @@ if /I "%FUNC_CHOICE%"=="A" (echo Function : ALL ^(ORDER + RV^))
 if /I "%FUNC_CHOICE%"=="3" (echo Function : ALL ^(ORDER + RV^))
 if not "%START_DATE%"=="auto-D14" (echo Date     : %START_DATE% to %END_DATE%)
 if "%START_DATE%"=="auto-D14"     (echo Date     : auto D-14 to yesterday)
-if defined PLATFORM_ARG (echo Platform : %PLATFORM_ARG%) else (echo Platform : all)
+if defined PARALLEL_MODE (echo Platform : PARALLEL ^(Shopee/Tiktok/Lazada, separate windows^)) else if defined PLATFORM_ARG (echo Platform : %PLATFORM_ARG%) else (echo Platform : all)
 if defined VISIBLE_ARG  (echo Visible  : ON)  else (echo Visible  : OFF)
 echo ============================================
 echo.
@@ -195,32 +211,51 @@ if /I "%FUNC_CHOICE%"=="S" goto RUN_STATUS
 if /I "%FUNC_CHOICE%"=="4" goto RUN_STATUS
 if /I "%FUNC_CHOICE%"=="N" goto RUN_RETURN
 if /I "%FUNC_CHOICE%"=="5" goto RUN_RETURN
+if /I "%FUNC_CHOICE%"=="I" goto RUN_INVOICE
+if /I "%FUNC_CHOICE%"=="6" goto RUN_INVOICE
 
 echo Invalid function choice.
 pause
 exit /b 1
 
 :RUN_ORDER
-echo [ORDER] Running... (includes FULL INVOICE download to TRCloud)
-%BASE_CMD% %PLATFORM_ARG%
+if defined PARALLEL_MODE (
+    call :SPAWN_PARALLEL "ORDER" "%BASE_CMD%"
+) else (
+    echo [ORDER] Running... (includes FULL INVOICE download to TRCloud)
+    %BASE_CMD% %PLATFORM_ARG%
+)
 goto END_RUN
 
 :RUN_RV
-echo [RV] Running...
-%BASE_RV_CMD% %PLATFORM_ARG%
+if defined PARALLEL_MODE (
+    call :SPAWN_PARALLEL "RV" "%BASE_RV_CMD%"
+) else (
+    echo [RV] Running...
+    %BASE_RV_CMD% %PLATFORM_ARG%
+)
 goto END_RUN
 
 :RUN_ALL
-echo [ALL] Step 1/2: ORDER (includes FULL INVOICE download to TRCloud)
-%BASE_CMD% %PLATFORM_ARG%
-echo.
-echo [ALL] Step 2/2: RV
-%BASE_RV_CMD% %PLATFORM_ARG%
+if defined PARALLEL_MODE (
+    call :SPAWN_PARALLEL "ORDER" "%BASE_CMD%"
+    call :SPAWN_PARALLEL "RV" "%BASE_RV_CMD%"
+) else (
+    echo [ALL] Step 1/2: ORDER (includes FULL INVOICE download to TRCloud)
+    %BASE_CMD% %PLATFORM_ARG%
+    echo.
+    echo [ALL] Step 2/2: RV
+    %BASE_RV_CMD% %PLATFORM_ARG%
+)
 goto END_RUN
 
 :RUN_STATUS
-echo [STATUS] Running... (D-14 auto; Shopee +Step 2 Items)
-%BASE_STATUS_CMD% %PLATFORM_ARG%
+if defined PARALLEL_MODE (
+    call :SPAWN_PARALLEL "STATUS" "%BASE_STATUS_CMD%"
+) else (
+    echo [STATUS] Running... (D-14 auto; Shopee +Step 2 Items)
+    %BASE_STATUS_CMD% %PLATFORM_ARG%
+)
 goto END_RUN
 
 :RUN_RETURN
@@ -228,10 +263,36 @@ echo [RETURN ITEM] Running... (Shopee only)
 %BASE_RETURN_CMD%
 goto END_RUN
 
+:RUN_INVOICE
+if defined PARALLEL_MODE (
+    call :SPAWN_PARALLEL "INVOICE" "%BASE_INVOICE_CMD%"
+) else (
+    echo [FULL INVOICE] Running... (download SO to TRCloud only, no sync)
+    %BASE_INVOICE_CMD% %PLATFORM_ARG%
+)
+goto END_RUN
+
+:: ── Spawn one platform per window (Shopee / Tiktok / Lazada) ──
+:SPAWN_PARALLEL
+setlocal
+set "P_LABEL=%~1"
+set "P_CMD=%~2"
+echo [%P_LABEL%] Parallel mode: launching Shopee / Tiktok / Lazada in separate windows...
+start "TRCloud %P_LABEL% - Shopee" cmd /k "%P_CMD% --platform shopee & echo. & echo [%P_LABEL% - Shopee] Done. & pause"
+start "TRCloud %P_LABEL% - Tiktok" cmd /k "%P_CMD% --platform tiktok & echo. & echo [%P_LABEL% - Tiktok] Done. & pause"
+start "TRCloud %P_LABEL% - Lazada" cmd /k "%P_CMD% --platform lazada & echo. & echo [%P_LABEL% - Lazada] Done. & pause"
+endlocal
+goto :eof
+
 :END_RUN
 echo.
 echo ------------------------------------------
-echo Sync finished.
+if defined PARALLEL_MODE (
+    echo Parallel windows launched — each platform is still running in its own window.
+    echo This menu window is done; check each platform window for its result.
+) else (
+    echo Sync finished.
+)
 echo Log saved in: logs\text\run_*.txt
 echo Opening logs folder...
 explorer "%~dp0logs"
