@@ -220,7 +220,9 @@ exit /b 1
 
 :RUN_ORDER
 if defined PARALLEL_MODE (
-    call :SPAWN_PARALLEL "ORDER" "%BASE_CMD%"
+    set "P_LABEL=ORDER"
+    set "P_CMD=%BASE_CMD%"
+    call :SPAWN_PARALLEL
 ) else (
     echo [ORDER] Running... (includes FULL INVOICE download to TRCloud)
     %BASE_CMD% %PLATFORM_ARG%
@@ -229,7 +231,9 @@ goto END_RUN
 
 :RUN_RV
 if defined PARALLEL_MODE (
-    call :SPAWN_PARALLEL "RV" "%BASE_RV_CMD%"
+    set "P_LABEL=RV"
+    set "P_CMD=%BASE_RV_CMD%"
+    call :SPAWN_PARALLEL
 ) else (
     echo [RV] Running...
     %BASE_RV_CMD% %PLATFORM_ARG%
@@ -238,8 +242,12 @@ goto END_RUN
 
 :RUN_ALL
 if defined PARALLEL_MODE (
-    call :SPAWN_PARALLEL "ORDER" "%BASE_CMD%"
-    call :SPAWN_PARALLEL "RV" "%BASE_RV_CMD%"
+    set "P_LABEL=ORDER"
+    set "P_CMD=%BASE_CMD%"
+    call :SPAWN_PARALLEL
+    set "P_LABEL=RV"
+    set "P_CMD=%BASE_RV_CMD%"
+    call :SPAWN_PARALLEL
 ) else (
     echo [ALL] Step 1/2: ORDER (includes FULL INVOICE download to TRCloud)
     %BASE_CMD% %PLATFORM_ARG%
@@ -251,7 +259,9 @@ goto END_RUN
 
 :RUN_STATUS
 if defined PARALLEL_MODE (
-    call :SPAWN_PARALLEL "STATUS" "%BASE_STATUS_CMD%"
+    set "P_LABEL=STATUS"
+    set "P_CMD=%BASE_STATUS_CMD%"
+    call :SPAWN_PARALLEL
 ) else (
     echo [STATUS] Running... (D-14 auto; Shopee +Step 2 Items)
     %BASE_STATUS_CMD% %PLATFORM_ARG%
@@ -265,7 +275,9 @@ goto END_RUN
 
 :RUN_INVOICE
 if defined PARALLEL_MODE (
-    call :SPAWN_PARALLEL "INVOICE" "%BASE_INVOICE_CMD%"
+    set "P_LABEL=INVOICE"
+    set "P_CMD=%BASE_INVOICE_CMD%"
+    call :SPAWN_PARALLEL
 ) else (
     echo [FULL INVOICE] Running... (download SO to TRCloud only, no sync)
     %BASE_INVOICE_CMD% %PLATFORM_ARG%
@@ -274,13 +286,11 @@ goto END_RUN
 
 :: ── Spawn one platform per window (Shopee / Tiktok / Lazada) ──
 :: หมายเหตุ: path ของโปรเจกต์มีเว้นวรรค (เช่น "OneDrive - Gadget Villa Co., Ltd")
-:: ถ้าใช้ cmd /k "คำสั่งยาว & pause" ตรงๆ จะโดนบั๊ก quote-parsing ของ cmd.exe
-:: (ตัด quote รอบ path ทิ้งจนพังตรง " - Gadget...") จึงต้องเขียนเป็นไฟล์ .bat
-:: ชั่วคราวแยกต่อ platform แล้ว start ไฟล์นั้นแทน เพื่อเลี่ยงปัญหานี้
+:: ห้ามส่ง P_CMD (มี " ครอบ path อยู่แล้ว) ผ่าน call-argument แบบ call :X "%VAR%"
+:: เพราะ quote ซ้อนกันจะทำให้ cmd tokenize argument ผิดจนตัด path ขาดตอนเว้นวรรค
+:: จึงส่งผ่าน global variable (P_LABEL / P_CMD ที่ผู้เรียก set ไว้ก่อน call) แทน
 :SPAWN_PARALLEL
 setlocal EnableDelayedExpansion
-set "P_LABEL=%~1"
-set "P_CMD=%~2"
 echo [%P_LABEL%] Parallel mode: launching Shopee / Tiktok / Lazada in separate windows...
 for %%G in (shopee tiktok lazada) do (
     set "TMPBAT=%TEMP%\trc_parallel_%P_LABEL%_%%G.bat"
