@@ -8,7 +8,7 @@ setlocal enabledelayedexpansion
 :: สต๊อกตัดตรงตามคำสั่งซื้อที่ส่งออกจริง แล้วต่อด้วย FULL INVOICE (Outstanding only)
 :: ช่วงวันเดียวกัน กันบิลตกหล่น จบแล้วส่งอีเมลสรุปผลรวมครั้งเดียว
 :: log ของแต่ละขั้นตอนถูกบันทึกอัตโนมัติอยู่แล้วที่ logs\text\run_ORDER_*.txt
-:: และ logs\text\run_FULLINVOICE_*.txt (ไม่ต้องตั้งค่าเพิ่ม)
+:: และ logs\text\run_FULL_INVOICE_*.txt (ไม่ต้องตั้งค่าเพิ่ม)
 :: ────────────────────────────────────────────
 
 cd /d "%~dp0"
@@ -61,7 +61,7 @@ if not %ORDER_EXIT%==0 set ORDER_STATUS=failed
 set INVOICE_STATUS=success
 if not %INVOICE_EXIT%==0 set INVOICE_STATUS=failed
 
-python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] End-of-day sync %START_DATE% to %END_DATE% done', 'End-of-day sync (after shipping) completed for %START_DATE% to %END_DATE%\n\nORDER (Step 1-3) : %ORDER_STATUS%\nFULL INVOICE     : %INVOICE_STATUS%\n\nLog: logs\\text\\run_ORDER_*.txt, run_FULLINVOICE_*.txt')"
+python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] End-of-day sync %START_DATE% to %END_DATE% done', 'End-of-day sync (after shipping) completed for %START_DATE% to %END_DATE%\n\nORDER (Step 1-3) : %ORDER_STATUS%\nFULL INVOICE     : %INVOICE_STATUS%\n\nLog: logs\\text\\run_ORDER_*.txt, run_FULL_INVOICE_*.txt')"
 
 echo ============================================================
 echo  Done  [%date% %time%]

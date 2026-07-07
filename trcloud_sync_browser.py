@@ -26,6 +26,7 @@ TRCloud Marketplace Sync — Browser Automation (Playwright)
 
 import asyncio
 import json
+import re
 import sys
 import argparse
 import smtplib
@@ -313,6 +314,11 @@ async def setup_session():
 # ─────────────────────────────────────────────
 # MODAL HANDLER (ใช้กับทุก platform)
 # ─────────────────────────────────────────────
+def _safe_name(s: str) -> str:
+    """ตัดอักขระที่ใช้เป็นชื่อไฟล์ไม่ได้ (เว้นวรรค/สัญลักษณ์) ออก เหลือแต่ตัวอักษร/ตัวเลขที่ปลอดภัย"""
+    return re.sub(r'[^A-Za-z0-9]+', '', s) or "shop"
+
+
 async def _screenshot(page, label: str):
     """Save screenshot on error."""
     try:
@@ -426,12 +432,17 @@ def calc_timeout(order_count: int) -> int:
     return seconds * 1000
 
 
-async def wait_for_complete_popup(page, shop_id: int, signal: _Signal, timeout: int = 120000) -> bool:
+async def wait_for_complete_popup(page, shop_id: int, signal: _Signal, timeout: int = 120000,
+                                  shop_name: str = "", step: str = "") -> bool:
     """
     รอสัญญาณ sync เสร็จ — TRCloud มี 2 รูปแบบ:
       1. มีข้อมูลใหม่   → ยิง native dialog 'Complete'  (จับโดย handle_dialog + signal)
       2. ไม่มีข้อมูลใหม่ → แสดง DOM modal "COMPLETE - No more data!" (จับโดย DOM polling)
+
+    shop_name / step: ใช้ตั้งชื่อไฟล์ screenshot ให้บอกได้ว่ามาจากร้าน/step ไหน
+    (ฟังก์ชันนี้ถูกเรียกใช้ร่วมกันทุก step ของทุก platform)
     """
+    screenshot_label = f"{_safe_name(shop_name)}{shop_id}" + (f"_{step}" if step else "")
     # ── ตรวจว่า signal มาก่อนเราเริ่มรอหรือเปล่า (race condition fix) ──
     if signal.is_set():
         log(f"    ✓ Complete (native dialog, pre-arrived 0s)")
@@ -477,7 +488,7 @@ async def wait_for_complete_popup(page, shop_id: int, signal: _Signal, timeout: 
 
         if dom_result.get('found'):
             log(f"    ✓ COMPLETE DOM modal ({elapsed//1000}s) [{dom_result.get('keyword')}] — {dom_result.get('snippet')}")
-            await _screenshot(page, f"shop{shop_id}_complete_popup")
+            await _screenshot(page, f"{screenshot_label}_complete_popup")
             await page.evaluate("""
                 () => {
                     const SELECTORS = '.modal, .alert, .swal2-container, [class*="popup"], [class*="dialog"]';
@@ -723,14 +734,15 @@ async def sync_shopee_status_only(page, shop: dict, sync_date: str = None, signa
         prepare_complete_event(signal)
         if not await js_click_button(page, "SYNC DOCUMENT"):
             log(f"  ❌ Step 1 button not found")
-            await _screenshot(page, f"error_shopee{shop_id}_status_step1")
+            await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_status_step1")
             return False
         await page.wait_for_timeout(1000)
-        await wait_for_complete_popup(page, shop_id, signal, timeout=180000)
+        await wait_for_complete_popup(page, shop_id, signal, timeout=180000,
+                                       shop_name=shop["name"], step="status_step1")
         log(f"  ✅ Step 1 OK")
     except Exception as e:
         log(f"  ❌ Step 1 failed: {e}")
-        await _screenshot(page, f"error_shopee{shop_id}_status_step1")
+        await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_status_step1")
         return False
 
     # ── Tick Select All (Step 2) ──
@@ -749,15 +761,16 @@ async def sync_shopee_status_only(page, shop: dict, sync_date: str = None, signa
         prepare_complete_event(signal)
         if not await js_click_button(page, "SYNC ITEMs"):
             log(f"  ❌ Step 2 button not found")
-            await _screenshot(page, f"error_shopee{shop_id}_status_step2_notfound")
+            await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_status_step2_notfound")
             return False
         await page.wait_for_timeout(1000)
-        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count))
+        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count),
+                                       shop_name=shop["name"], step="status_step2")
         log(f"  ✅ Step 2 OK")
         return True
     except Exception as e:
         log(f"  ❌ Step 2 failed: {e}")
-        await _screenshot(page, f"error_shopee{shop_id}_status_step2")
+        await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_status_step2")
         return False
 
 
@@ -781,12 +794,13 @@ async def sync_tiktok_status_only(page, shop: dict, sync_date: str = None, signa
         await btn1.click()
         await wait_for_modal_and_confirm(page, shop["name"])
         await wait_for_operation(page)
-        await wait_for_complete_popup(page, shop_id, signal, timeout=180000)
+        await wait_for_complete_popup(page, shop_id, signal, timeout=180000,
+                                       shop_name=shop["name"], step="status_step1")
         log(f"  ✅ Step 1 OK")
         return True
     except Exception as e:
         log(f"  ❌ Step 1 failed: {e}")
-        await _screenshot(page, f"error_tiktok{shop_id}_status_step1")
+        await _screenshot(page, f"error_tiktok_{_safe_name(shop['name'])}{shop_id}_status_step1")
         return False
 
 
@@ -815,7 +829,7 @@ async def sync_lazada_status_only(page, shop: dict, sync_date: str = None, signa
         return True
     except Exception as e:
         log(f"  ❌ Step 1 failed: {e}")
-        await _screenshot(page, f"error_lazada{shop_id}_status_step1")
+        await _screenshot(page, f"error_lazada_{_safe_name(shop['name'])}{shop_id}_status_step1")
         return False
 
 
@@ -893,19 +907,20 @@ async def sync_shopee_return_item(page, shop: dict, sync_date: str = None, signa
         """)
         if not clicked:
             log(f"  ❌ sync_return() button not found")
-            await _screenshot(page, f"error_shopee{shop_id}_return_step6_notfound")
+            await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_return_step6_notfound")
             return False
         log(f"    JS click: {clicked}")
 
         await page.wait_for_timeout(1000)
         await wait_for_modal_and_confirm(page, shop["name"])
-        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count))
+        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count),
+                                       shop_name=shop["name"], step="return_step6")
         log(f"  ✅ Step 6 OK")
         return True
 
     except Exception as e:
         log(f"  ❌ Step 6 failed: {e}")
-        await _screenshot(page, f"error_shopee{shop_id}_return_step6")
+        await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_return_step6")
         return False
 
 
@@ -931,7 +946,7 @@ async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal
 
     log(f"  → Database date: {sync_date}")
     if not await set_date_field(page, sync_date):
-        await _screenshot(page, f"error_rv_{platform}{shop_id}_set_date")
+        await _screenshot(page, f"error_rv_{platform}_{_safe_name(shop_name)}{shop_id}_set_date")
         return False
 
     log("  → Step 1: Sync Payment")
@@ -944,13 +959,14 @@ async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal
             clicked = await js_click_button(page, "SYNC")
         if not clicked:
             log("  ❌ Step 1 button not found (SYNC PAYMENT / SYNC DOCUMENT / SYNC)")
-            await _screenshot(page, f"error_rv_{platform}{shop_id}_step1_notfound")
+            await _screenshot(page, f"error_rv_{platform}_{_safe_name(shop_name)}{shop_id}_step1_notfound")
             return False
 
         await page.wait_for_timeout(1000)
         await wait_for_modal_and_confirm(page, f"{platform} RV")
         await wait_for_operation(page)
-        await wait_for_complete_popup(page, 0, signal, timeout=90000)
+        await wait_for_complete_popup(page, shop_id, signal, timeout=90000,
+                                       shop_name=shop_name, step="rv_step1")
 
         log("  → RUN (refresh table after sync)")
         try:
@@ -978,7 +994,7 @@ async def sync_receipt_rv_shop(page, shop: dict, sync_date: str, signal: _Signal
 
     except Exception as e:
         log(f"  ❌ Step 1 failed: {e}")
-        await _screenshot(page, f"error_rv_{platform}{shop_id}_step1")
+        await _screenshot(page, f"error_rv_{platform}_{_safe_name(shop_name)}{shop_id}_step1")
         return False
 
 
@@ -1124,16 +1140,17 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         prepare_complete_event(signal)
         if not await js_click_button(page, "SYNC DOCUMENT"):
             log(f"  ❌ Step 1 button not found")
-            await _screenshot(page, f"error_shopee{shop_id}_step1_notfound")
+            await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step1_notfound")
             return False
 
         await page.wait_for_timeout(1000)
-        await wait_for_complete_popup(page, shop_id, signal, timeout=180000)
+        await wait_for_complete_popup(page, shop_id, signal, timeout=180000,
+                                       shop_name=shop["name"], step="step1")
         log(f"  ✅ Step 1 OK")
 
     except Exception as e:
         log(f"  ❌ Step 1 failed: {e}")
-        await _screenshot(page, f"error_shopee{shop_id}_step1")
+        await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step1")
         return False
 
     # ── Tick Select All (Step 2) ──
@@ -1152,16 +1169,17 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         prepare_complete_event(signal)
         if not await js_click_button(page, "SYNC ITEMs"):
             log(f"  ❌ Step 2 button not found")
-            await _screenshot(page, f"error_shopee{shop_id}_step2_notfound")
+            await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step2_notfound")
             return False
 
         await page.wait_for_timeout(1000)
-        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count))
+        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count),
+                                       shop_name=shop["name"], step="step2")
         log(f"  ✅ Step 2 OK")
 
     except Exception as e:
         log(f"  ❌ Step 2 failed: {e}")
-        await _screenshot(page, f"error_shopee{shop_id}_step2")
+        await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step2")
         return False
 
     # ── RUN refresh before Step 3 ──
@@ -1202,16 +1220,17 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         prepare_complete_event(signal)
         if not await js_click_button(page, "FULL TAX"):
             log(f"  ❌ Step 3 button not found (FULL TAX)")
-            await _screenshot(page, f"error_shopee{shop_id}_step3_notfound")
+            await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step3_notfound")
             return False
 
         await page.wait_for_timeout(1000)
-        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count_s3))
+        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count_s3),
+                                       shop_name=shop["name"], step="step3")
         log(f"  ✅ Step 3 OK")
 
     except Exception as e:
         log(f"  ❌ Step 3 failed: {e}")
-        await _screenshot(page, f"error_shopee{shop_id}_step3")
+        await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step3")
         return False
 
     # ── FULL INVOICE (โหลด SO เข้า TRCloud) ──
@@ -1370,20 +1389,21 @@ async def _full_invoice_download(page, shop: dict, order_count: int, signal: _Si
         """)
         if not clicked:
             log(f"  ❌ sync_trcloud() button not found")
-            await _screenshot(page, f"error_{platform}{shop_id}_full_invoice_notfound")
+            await _screenshot(page, f"error_{platform}_{_safe_name(name)}{shop_id}_full_invoice_notfound")
             return False
         log(f"    JS click: {clicked}")
 
         await page.wait_for_timeout(1000)
         await wait_for_modal_and_confirm(page, name)
-        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count))
+        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count),
+                                       shop_name=name, step=f"full_invoice_{label}")
 
         # ── เช็คว่าโหลดครบหรือยัง: filter Outstanding=YES แล้วนับแถวที่ยังไม่โหลด ──
         pending = await _count_outstanding(page)
         await _set_outstanding_filter(page, "no")  # คืน filter เป็น Show All
         if pending > 0:
             log(f"  ⚠ FULL INVOICE: ยังเหลือ {pending}/{order_count} ออเดอร์ที่ยังไม่โหลดเข้า TRCloud (Outstanding)")
-            await _screenshot(page, f"error_{platform}{shop_id}_full_invoice_outstanding")
+            await _screenshot(page, f"error_{platform}_{_safe_name(name)}{shop_id}_full_invoice_outstanding")
             record_full_invoice_result(shop, sync_date, label, order_count, pending, ok=False)
             return False
 
@@ -1393,7 +1413,7 @@ async def _full_invoice_download(page, shop: dict, order_count: int, signal: _Si
 
     except Exception as e:
         log(f"  ❌ FULL INVOICE failed: {e}")
-        await _screenshot(page, f"error_{platform}{shop_id}_full_invoice")
+        await _screenshot(page, f"error_{platform}_{_safe_name(name)}{shop_id}_full_invoice")
         record_full_invoice_result(shop, sync_date, label, order_count, "?", ok=False)
         return False
 
@@ -1592,12 +1612,13 @@ async def sync_tiktok_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         await btn1.click()
         await wait_for_modal_and_confirm(page, name)
         await wait_for_operation(page)
-        await wait_for_complete_popup(page, shop_id, signal, timeout=180000)
+        await wait_for_complete_popup(page, shop_id, signal, timeout=180000,
+                                       shop_name=name, step="step1")
         log(f"  ✅ Step 1 OK")
 
     except Exception as e:
         log(f"  ❌ Step 1 failed: {e}")
-        await _screenshot(page, f"error_tiktok{shop_id}_step1")
+        await _screenshot(page, f"error_tiktok_{_safe_name(name)}{shop_id}_step1")
         return False
 
     # ── Step 2: FULL INVOICE (โหลด SO เข้า TRCloud) ──
@@ -1640,7 +1661,7 @@ async def sync_lazada_shop(page, shop: dict, sync_date: str = None, signal: _Sig
 
     except Exception as e:
         log(f"  ❌ Step 1 failed: {e}")
-        await _screenshot(page, f"error_lazada{shop_id}_step1")
+        await _screenshot(page, f"error_lazada_{_safe_name(name)}{shop_id}_step1")
         return False
 
     # ── Step 3: SYNC DETAIL ──
@@ -1655,7 +1676,7 @@ async def sync_lazada_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         }""")
         if not result:
             log(f"  ❌ SYNC DETAIL button not found (sync_detail)")
-            await _screenshot(page, f"error_lazada{shop_id}_step3_notfound")
+            await _screenshot(page, f"error_lazada_{_safe_name(name)}{shop_id}_step3_notfound")
             return False
 
         log(f"    Clicked: {result}")
@@ -1665,7 +1686,7 @@ async def sync_lazada_shop(page, shop: dict, sync_date: str = None, signal: _Sig
 
     except Exception as e:
         log(f"  ❌ Step 3 failed: {e}")
-        await _screenshot(page, f"error_lazada{shop_id}_step3")
+        await _screenshot(page, f"error_lazada_{_safe_name(name)}{shop_id}_step3")
         return False
 
     # ── FULL INVOICE (โหลด SO เข้า TRCloud) ──
@@ -2087,7 +2108,7 @@ async def run_sync_full_invoice(start_date: str, end_date: str, platform: str = 
         log("❌ start-date must be <= end-date")
         return
 
-    log_path = init_log("FULLINVOICE")
+    log_path = init_log("FULL_INVOICE")
     total_days = (d_end - d_start).days + 1
 
     if target_id is not None:
