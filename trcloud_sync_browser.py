@@ -1490,12 +1490,16 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
     if not await set_report_date_filter(page, sync_date):
         log(f"    ⚠ Date field not found — using default date")
 
+    # ── Filter Outstanding = Yes: โชว์เฉพาะรายการที่ยังไม่โหลดเข้า TRCloud ──
+    # กัน re-select/re-download รายการที่โหลดสำเร็จไปแล้วซ้ำ (เร็วขึ้น + ไม่แตะของที่โอเคอยู่แล้ว)
+    await _set_outstanding_filter(page, "yes")
+
     if platform not in SHOP_SETTINGS_ENDPOINTS:
-        log(f"  → FULL INVOICE: RUN (generate report)")
+        log(f"  → FULL INVOICE: RUN (generate report, outstanding only)")
         order_count = await _run_report_and_count(page)
-        log(f"    Report rows: {order_count}")
+        log(f"    Pending rows: {order_count}")
         if order_count == 0:
-            log(f"  ✅ FULL INVOICE: no orders for {sync_date} — skip")
+            log(f"  ✅ FULL INVOICE: no outstanding orders for {sync_date} — already loaded, skip")
             record_full_invoice_result(shop, sync_date, "All", 0, 0, ok=True)
             return True
         return await _full_invoice_download(page, shop, order_count, signal, sync_date, "All")
@@ -1506,6 +1510,8 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
 
     left_on_etax_settings = False
     for tax_flag, target, label in [("1", ETAX_SETTINGS, "ETAX"), ("0", NORMAL_SETTINGS, "Normal")]:
+        # _full_invoice_download ของรอบก่อนหน้าคืน filter Outstanding เป็น "no" ตอนจบ — ต้องตั้งใหม่ทุกรอบ
+        await _set_outstanding_filter(page, "yes")
         log(f"  → FULL INVOICE: Filter Full Tax = {tax_flag} ({label})")
         if not await _set_full_tax_filter(page, tax_flag):
             log(f"    ⚠ Full Tax filter not found — fallback เป็น single batch")
@@ -1516,9 +1522,9 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
             return await _full_invoice_download(page, shop, order_count, signal, sync_date, "All")
 
         order_count = await _run_report_and_count(page)
-        log(f"    Report rows ({label}): {order_count}")
+        log(f"    Pending rows ({label}): {order_count}")
         if order_count == 0:
-            log(f"    No {label} orders for {sync_date} — skip")
+            log(f"    No outstanding {label} orders for {sync_date} — already loaded, skip")
             record_full_invoice_result(shop, sync_date, label, 0, 0, ok=True)
             continue
 
@@ -1544,6 +1550,7 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
             return False
         await set_report_date_filter(page, sync_date)
         await _set_full_tax_filter(page, tax_flag)
+        await _set_outstanding_filter(page, "yes")
         order_count = await _run_report_and_count(page)
 
         if not await _full_invoice_download(page, shop, order_count, signal, sync_date, label):
