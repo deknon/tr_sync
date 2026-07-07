@@ -84,14 +84,22 @@ FULL_INVOICE_ENDPOINTS = {
     "lazada": f"{APP_URL}/connector/manage-data-lazada-trcloud.php?id={{shop_id}}",
 }
 
-# Shopee/Lazada เท่านั้นที่มี filter "Full Tax" (1=ลูกค้าขอ ETAX, 0=บิลปกติ)
-# ต้องสลับ prefix เอกสารที่หน้า manage-shop ก่อน download แต่ละกลุ่ม — TikTok ไม่มี filter นี้
+# หน้า manage-shop — มีทุก platform ใช้เช็ค/ตั้งค่า document_date, prefix_iv, contact_name
 SHOP_SETTINGS_ENDPOINTS = {
     "shopee": f"{APP_URL}/connector/manage-shop-shopee.php?id={{shop_id}}",
     "lazada": f"{APP_URL}/connector/manage-shop-lazada.php?id={{shop_id}}",
+    "tiktok": f"{APP_URL}/connector/manage-shop-tiktok.php?id={{shop_id}}",
 }
+
+# Shopee/Lazada เท่านั้นที่มี filter "Full Tax" (1=ลูกค้าขอ ETAX, 0=บิลปกติ) ในหน้า report
+# ต้องสลับ prefix เอกสารที่หน้า manage-shop ก่อน download แต่ละกลุ่ม — TikTok ไม่มี filter นี้
+FULL_TAX_PLATFORMS = {"shopee", "lazada"}
 PREFIX_IV_ETAX   = "ETIV"
 PREFIX_IV_NORMAL = "ONIV"
+
+# document_date บนหน้า manage-shop (select: 0=วันที่ตามคำสั่งซื้อใน Platform, 1=ผู้ใช้งานกำหนดเอง)
+# ต้องเป็น "0" เสมอ ไม่งั้นวันที่เอกสารใน TRCloud จะไม่ตรงกับวันที่สั่งซื้อจริงในแพลตฟอร์ม
+DOCUMENT_DATE_FOLLOW_PLATFORM = "0"
 
 # Contact Name บนหน้า manage-shop (select: 0=Follow Platform, 1=Follow TRCLOUD Master)
 # ETAX ต้องใช้ชื่อ-ที่อยู่ตามที่ลูกค้ากรอกในแพลตฟอร์ม / ปกติใช้ชื่อจาก TRCLOUD Master
@@ -1418,6 +1426,63 @@ async def _full_invoice_download(page, shop: dict, order_count: int, signal: _Si
         return False
 
 
+async def ensure_document_date(page, platform: str, shop_id: int) -> bool:
+    """
+    เช็ค/บังคับ document_date ให้เป็น "0" (วันที่ตามคำสั่งซื้อใน Platform) เสมอ
+    ก่อนโหลด FULL INVOICE ทุกครั้ง ทุกร้าน ทุก platform (shopee/lazada/tiktok)
+    กันกรณีมีคนเผลอไปตั้งเป็น "1" (ผู้ใช้งานกำหนดเอง) ที่หน้า manage-shop แล้วลืมสลับกลับ
+    ไม่ถือเป็น hard fail — ถ้าเช็ค/ตั้งไม่ได้แค่ log เตือนแล้วให้ FULL INVOICE ทำงานต่อ
+    """
+    url_tpl = SHOP_SETTINGS_ENDPOINTS.get(platform)
+    if not url_tpl:
+        return True  # platform นี้ไม่มีหน้า manage-shop ให้เช็ค — ข้าม
+
+    if not await _safe_goto(page, url_tpl.format(shop_id=shop_id)):
+        log(f"    ⚠ document_date check: page load timeout — skip check")
+        return True
+
+    current = await page.evaluate("""
+        () => { const el = document.querySelector('select[name=document_date]'); return el ? el.value : null; }
+    """)
+    if current is None:
+        log(f"    ⚠ document_date field not found — skip check")
+        return True
+    if current == DOCUMENT_DATE_FOLLOW_PLATFORM:
+        log(f"    ✓ document_date = 0 (วันที่ตามคำสั่งซื้อใน Platform)")
+        return True
+
+    log(f"    → document_date = {current} → 0 (วันที่ตามคำสั่งซื้อใน Platform)")
+    fields_set = await page.evaluate("""
+        (value) => {
+            const el = document.querySelector('select[name=document_date]');
+            if (!el) return false;
+            el.value = value;
+            el.dispatchEvent(new Event('change', {bubbles: true}));
+            return true;
+        }
+    """, DOCUMENT_DATE_FOLLOW_PLATFORM)
+    if not fields_set:
+        log(f"    ⚠ document_date: set field failed — continuing anyway")
+        return True
+
+    saved = await page.evaluate("""
+        () => {
+            const a = Array.from(document.querySelectorAll('a')).find(
+                x => (x.getAttribute('onclick') || '').includes('save_function')
+            );
+            if (a) { a.click(); return true; }
+            return false;
+        }
+    """)
+    if not saved:
+        log(f"    ⚠ document_date: Save [F2] button not found — continuing anyway")
+        return True
+
+    await page.wait_for_timeout(1500)
+    log(f"    ✓ document_date saved → 0")
+    return True
+
+
 async def get_shop_invoice_settings(page, platform: str, shop_id: int):
     """อ่านค่า Prefix [Full Tax] (prefix_iv) + Contact Name (contact_name) ปัจจุบันจากหน้า manage-shop"""
     url_tpl = SHOP_SETTINGS_ENDPOINTS.get(platform)
@@ -1501,6 +1566,10 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
     if not url_tpl:
         return True  # platform นี้ยังไม่รองรับ FULL INVOICE — ข้าม ไม่ถือว่า fail
 
+    # ── เช็ค document_date ทุกครั้ง ทุกร้าน ก่อนโหลด invoice (ทุก platform) ──
+    log(f"  → เช็ค manage-shop settings (document_date)")
+    await ensure_document_date(page, platform, shop_id)
+
     url = url_tpl.format(shop_id=shop_id)
     if not await _safe_goto(page, url):
         log(f"  ❌ Page load timeout (FULL INVOICE): {url}")
@@ -1514,7 +1583,7 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
     # กัน re-select/re-download รายการที่โหลดสำเร็จไปแล้วซ้ำ (เร็วขึ้น + ไม่แตะของที่โอเคอยู่แล้ว)
     await _set_outstanding_filter(page, "yes")
 
-    if platform not in SHOP_SETTINGS_ENDPOINTS:
+    if platform not in FULL_TAX_PLATFORMS:
         log(f"  → FULL INVOICE: RUN (generate report, outstanding only)")
         order_count = await _run_report_and_count(page)
         log(f"    Pending rows: {order_count}")
