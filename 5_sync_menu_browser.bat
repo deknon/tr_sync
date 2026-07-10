@@ -5,6 +5,9 @@ chcp 65001 >nul
 :: ── วิธีใช้งานเมนู (สั้นๆ) ────────────────────
 :: ORDER        : ดึงออเดอร์เข้า TRCloud (Step 1+2+3) แล้วโหลด FULL INVOICE (IV) ต่อทันที
 ::                ต้องระบุ platform + ช่วงวันที่
+::                ⚠ ถ้าวันที่เลือกเคย sync Step 1-3 ไปแล้ว (items/full-tax ถูกดึงเข้า TRCloud
+::                แล้ว) ไม่จำเป็นต้องรัน ORDER ซ้ำ — ใช้ STATUS แทนก็พอ (เช็ค/อัปเดตสถานะ
+::                อย่างเดียว เร็วกว่ามาก) แล้วค่อยใช้ FULL INVOICE โหลดบิลตามหลัง
 :: RV           : sync ใบเสร็จรับเงิน (RECEIPT [RV]) ต้องระบุ platform + ช่วงวันที่
 :: ALL          : รัน ORDER แล้วต่อด้วย RV ในการรันครั้งเดียว
 :: STATUS       : อัพเดทสถานะออเดอร์เท่านั้น (Step 1, Shopee เพิ่ม Step 2 Sync Items) ย้อนหลัง 14 วันอัตโนมัติ ไม่ต้องใส่วันที่
@@ -37,6 +40,10 @@ echo   [I] or [6] = Sync FULL INVOICE  (download SO to TRCloud only, no sync fir
 echo.
 echo   NOTE: ORDER now auto-loads FULL INVOICE (IV) to TRCloud after
 echo         order sync of each shop/day — takes longer on busy days.
+echo   NOTE: Re-syncing a date that already went through ORDER before is
+echo         usually unnecessary (items/full-tax already in TRCloud) — use
+echo         STATUS instead to just refresh order status, then FULL INVOICE
+echo         to load any bill still pending. Much faster.
 echo.
 set /p FUNC_CHOICE=Function:
 if "%FUNC_CHOICE%"=="" (

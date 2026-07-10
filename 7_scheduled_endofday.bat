@@ -4,11 +4,13 @@ setlocal enabledelayedexpansion
 
 :: ── วิธีใช้งาน (สั้นๆ) ────────────────────────
 :: ใช้กับ Windows Task Scheduler รันตอนสิ้นวัน (หลังส่งของ) ไม่มี prompt โต้ตอบ
-:: sync ORDER (Step 1-3) ทุก platform หน้าต่างเดียว ช่วง D-3 ถึงวันนี้ (D-0) เพื่อให้
-:: สต๊อกตัดตรงตามคำสั่งซื้อที่ส่งออกจริง แล้วต่อด้วย FULL INVOICE (Outstanding only)
-:: ช่วงวันเดียวกัน กันบิลตกหล่น จบแล้วส่งอีเมลสรุปผลรวมครั้งเดียว
-:: log ของแต่ละขั้นตอนถูกบันทึกอัตโนมัติอยู่แล้วที่ logs\text\run_ORDER_*.txt
-:: และ logs\text\run_FULL_INVOICE_*.txt (ไม่ต้องตั้งค่าเพิ่ม)
+:: - วันนี้ (D-0): ORDER เต็ม (Step 1-3) เพราะเป็น order ใหม่ ต้อง sync items/tax ครั้งแรก
+:: - D-3 ถึง D-1: STATUS อย่างเดียว (Step 1 + Step 2 เฉพาะ Shopee) แค่พอเช็ค/อัปเดต
+::   สถานะที่เปลี่ยนตอนส่งของสิ้นวัน ไม่ต้อง sync items/full-tax ซ้ำ (เคย sync แล้วตอนเป็น D-0)
+:: - FULL INVOICE (Outstanding only) คลุม D-3 ถึง D-0 ทั้งช่วง เป็น safety net กันบิลตกหล่น
+:: ทุก platform หน้าต่างเดียว จบแล้วส่งอีเมลสรุปผลรวมครั้งเดียว
+:: log ของแต่ละขั้นตอนถูกบันทึกอัตโนมัติอยู่แล้วที่ logs\text\run_ORDER_*.txt,
+:: run_STATUS_*.txt และ run_FULL_INVOICE_*.txt (ไม่ต้องตั้งค่าเพิ่ม)
 :: ────────────────────────────────────────────
 
 cd /d "%~dp0"
@@ -40,14 +42,22 @@ echo  Date range: %START_DATE% to %END_DATE%
 echo ============================================================
 echo.
 
-:: ORDER sync (Step 1-3, includes per-shop/day FULL INVOICE, all shops, single window)
+:: ORDER sync — today (D-0) only, full Step 1-3 + built-in per-shop/day FULL INVOICE
 echo [ORDER] Start: %time%
-python "%~dp0trcloud_sync_browser.py" --start-date %START_DATE% --end-date %END_DATE% --no-notify
+python "%~dp0trcloud_sync_browser.py" --start-date %END_DATE% --end-date %END_DATE% --no-notify
 set ORDER_EXIT=%ERRORLEVEL%
 echo [ORDER] End  : %time%
 echo.
 
-:: FULL INVOICE safety net (Outstanding only, same date range as ORDER)
+:: STATUS sync — D-3 to D-1 (already went through Step 1-3 on their own D-0 night;
+:: just refresh status here, e.g. orders that changed when shipped today)
+echo [STATUS] Start: %time%
+python "%~dp0trcloud_sync_browser.py" --status --lookback 3 --no-notify
+set STATUS_EXIT=%ERRORLEVEL%
+echo [STATUS] End  : %time%
+echo.
+
+:: FULL INVOICE safety net (Outstanding only, D-3 to D-0 — same range as before)
 echo [FULL INVOICE] Start: %time%
 python "%~dp0trcloud_sync_browser.py" --full-invoice --start-date %START_DATE% --end-date %END_DATE% --no-notify
 set INVOICE_EXIT=%ERRORLEVEL%
@@ -58,10 +68,13 @@ echo.
 set ORDER_STATUS=success
 if not %ORDER_EXIT%==0 set ORDER_STATUS=failed
 
+set STATUS_RESULT=success
+if not %STATUS_EXIT%==0 set STATUS_RESULT=failed
+
 set INVOICE_STATUS=success
 if not %INVOICE_EXIT%==0 set INVOICE_STATUS=failed
 
-python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] End-of-day sync %START_DATE% to %END_DATE% done', 'End-of-day sync (after shipping) completed for %START_DATE% to %END_DATE%\n\nORDER (Step 1-3) : %ORDER_STATUS%\nFULL INVOICE     : %INVOICE_STATUS%\n\nLog: logs\\text\\run_ORDER_*.txt, run_FULL_INVOICE_*.txt')"
+python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] End-of-day sync %END_DATE% done', 'End-of-day sync (after shipping) completed\n\nORDER (D-0, Step 1-3)     : %ORDER_STATUS%\nSTATUS (D-3 to D-1)       : %STATUS_RESULT%\nFULL INVOICE (D-3 to D-0) : %INVOICE_STATUS%\n\nLog: logs\\text\\run_ORDER_*.txt, run_STATUS_*.txt, run_FULL_INVOICE_*.txt')"
 
 echo ============================================================
 echo  Done  [%date% %time%]
