@@ -98,8 +98,11 @@ PREFIX_IV_ETAX   = "ETIV"
 PREFIX_IV_NORMAL = "ONIV"
 
 # document_date บนหน้า manage-shop (select: 0=วันที่ตามคำสั่งซื้อใน Platform, 1=ผู้ใช้งานกำหนดเอง)
-# ต้องเป็น "0" เสมอ ไม่งั้นวันที่เอกสารใน TRCloud จะไม่ตรงกับวันที่สั่งซื้อจริงในแพลตฟอร์ม
+# บิลปกติ (ONIV) ต้องเป็น "1" (วันที่ปัจจุบันตอนโหลดบิล) — ฝ่ายบัญชีแจ้งว่าวันที่บิลกับเลขที่
+# เอกสารต้องเรียงลำดับตรงกัน ถ้าใช้วันที่ order จริง (ซึ่งอาจย้อนหลังกว่าบิลที่ออกไปแล้ว) จะทำให้
+# วันที่เอกสารสลับลำดับกับเลขที่เอกสาร ผิดหลักบัญชี — ETAX (ETIV) ยังคงใช้ "0" (วันที่ order จริง)
 DOCUMENT_DATE_FOLLOW_PLATFORM = "0"
+DOCUMENT_DATE_CURRENT          = "1"
 
 # Contact Name บนหน้า manage-shop (select: 0=Follow Platform, 1=Follow TRCLOUD Master)
 # ETAX ต้องใช้ชื่อ-ที่อยู่ตามที่ลูกค้ากรอกในแพลตฟอร์ม / ปกติใช้ชื่อจาก TRCLOUD Master
@@ -1428,9 +1431,10 @@ async def _full_invoice_download(page, shop: dict, order_count: int, signal: _Si
 
 async def ensure_document_date(page, platform: str, shop_id: int) -> bool:
     """
-    เช็ค/บังคับ document_date ให้เป็น "0" (วันที่ตามคำสั่งซื้อใน Platform) เสมอ
+    เช็ค/บังคับ document_date ให้เป็น "1" (ผู้ใช้งานกำหนดเอง = วันที่ปัจจุบันตอนโหลดบิล) เสมอ
     ก่อนโหลด FULL INVOICE ทุกครั้ง ทุกร้าน ทุก platform (shopee/lazada/tiktok)
-    กันกรณีมีคนเผลอไปตั้งเป็น "1" (ผู้ใช้งานกำหนดเอง) ที่หน้า manage-shop แล้วลืมสลับกลับ
+    ฝ่ายบัญชีต้องการให้วันที่เอกสารเรียงลำดับตรงกับเลขที่เอกสาร — ถ้าใช้วันที่ order จริง (ค่า "0")
+    ซึ่งอาจย้อนหลังกว่าบิลที่ออกไปก่อนหน้า จะทำให้วันที่สลับลำดับกับเลขที่เอกสาร ผิดหลักบัญชี
     ไม่ถือเป็น hard fail — ถ้าเช็ค/ตั้งไม่ได้แค่ log เตือนแล้วให้ FULL INVOICE ทำงานต่อ
     """
     url_tpl = SHOP_SETTINGS_ENDPOINTS.get(platform)
@@ -1447,11 +1451,11 @@ async def ensure_document_date(page, platform: str, shop_id: int) -> bool:
     if current is None:
         log(f"    ⚠ document_date field not found — skip check")
         return True
-    if current == DOCUMENT_DATE_FOLLOW_PLATFORM:
-        log(f"    ✓ document_date = 0 (วันที่ตามคำสั่งซื้อใน Platform)")
+    if current == DOCUMENT_DATE_CURRENT:
+        log(f"    ✓ document_date = 1 (ผู้ใช้งานกำหนดเอง / วันที่ปัจจุบัน)")
         return True
 
-    log(f"    → document_date = {current} → 0 (วันที่ตามคำสั่งซื้อใน Platform)")
+    log(f"    → document_date = {current} → 1 (ผู้ใช้งานกำหนดเอง / วันที่ปัจจุบัน)")
     fields_set = await page.evaluate("""
         (value) => {
             const el = document.querySelector('select[name=document_date]');
@@ -1460,7 +1464,7 @@ async def ensure_document_date(page, platform: str, shop_id: int) -> bool:
             el.dispatchEvent(new Event('change', {bubbles: true}));
             return true;
         }
-    """, DOCUMENT_DATE_FOLLOW_PLATFORM)
+    """, DOCUMENT_DATE_CURRENT)
     if not fields_set:
         log(f"    ⚠ document_date: set field failed — continuing anyway")
         return True
@@ -1479,12 +1483,12 @@ async def ensure_document_date(page, platform: str, shop_id: int) -> bool:
         return True
 
     await page.wait_for_timeout(1500)
-    log(f"    ✓ document_date saved → 0")
+    log(f"    ✓ document_date saved → 1")
     return True
 
 
 async def get_shop_invoice_settings(page, platform: str, shop_id: int):
-    """อ่านค่า Prefix [Full Tax] (prefix_iv) + Contact Name (contact_name) ปัจจุบันจากหน้า manage-shop"""
+    """อ่านค่า Prefix [Full Tax] (prefix_iv) + Contact Name (contact_name) + document_date จากหน้า manage-shop"""
     url_tpl = SHOP_SETTINGS_ENDPOINTS.get(platform)
     if not url_tpl:
         return None
@@ -1495,15 +1499,21 @@ async def get_shop_invoice_settings(page, platform: str, shop_id: int):
         () => {
             const iv = document.querySelector('input[name=prefix_iv]');
             const cn = document.querySelector('select[name=contact_name]');
-            return {prefix_iv: iv ? iv.value : null, contact_name: cn ? cn.value : null};
+            const dd = document.querySelector('select[name=document_date]');
+            return {
+                prefix_iv: iv ? iv.value : null,
+                contact_name: cn ? cn.value : null,
+                document_date: dd ? dd.value : null,
+            };
         }
     """)
 
 
-async def set_shop_invoice_settings(page, platform: str, shop_id: int, prefix_value: str, contact_name_value: str) -> bool:
+async def set_shop_invoice_settings(page, platform: str, shop_id: int, prefix_value: str,
+                                    contact_name_value: str, document_date_value: str) -> bool:
     """
     ตั้งค่า Prefix [Full Tax] (prefix_iv, text) + Contact Name (contact_name, select)
-    แล้วกด Save [F2] — ต้องอยู่ที่หน้า manage-shop อยู่แล้ว
+    + document_date (select) แล้วกด Save [F2] — ต้องอยู่ที่หน้า manage-shop อยู่แล้ว
     """
     url_tpl = SHOP_SETTINGS_ENDPOINTS.get(platform)
     if not url_tpl:
@@ -1513,9 +1523,10 @@ async def set_shop_invoice_settings(page, platform: str, shop_id: int, prefix_va
         return False
 
     fields_set = await page.evaluate("""
-        ([prefixValue, contactValue]) => {
+        ([prefixValue, contactValue, documentDateValue]) => {
             const iv = document.querySelector('input[name=prefix_iv]');
             const cn = document.querySelector('select[name=contact_name]');
+            const dd = document.querySelector('select[name=document_date]');
             if (!iv || !cn) return false;
             const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
             setter.call(iv, prefixValue);
@@ -1523,9 +1534,13 @@ async def set_shop_invoice_settings(page, platform: str, shop_id: int, prefix_va
             iv.dispatchEvent(new Event('change', {bubbles: true}));
             cn.value = contactValue;
             cn.dispatchEvent(new Event('change', {bubbles: true}));
+            if (dd) {
+                dd.value = documentDateValue;
+                dd.dispatchEvent(new Event('change', {bubbles: true}));
+            }
             return true;
         }
-    """, [prefix_value, contact_name_value])
+    """, [prefix_value, contact_name_value, document_date_value])
     if not fields_set:
         log(f"    ⚠ prefix_iv / contact_name field not found")
         return False
@@ -1544,7 +1559,7 @@ async def set_shop_invoice_settings(page, platform: str, shop_id: int, prefix_va
         return False
 
     await page.wait_for_timeout(1500)
-    log(f"    ✓ prefix_iv → {prefix_value}, contact_name → {contact_name_value} (saved)")
+    log(f"    ✓ prefix_iv → {prefix_value}, contact_name → {contact_name_value}, document_date → {document_date_value} (saved)")
     return True
 
 
@@ -1553,9 +1568,13 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
     โหลด SO แบบ FULL INVOICE (ปุ่ม "FULL TAX DOWNLOAD to TRCLOUD" / sync_trcloud())
     รันต่อจาก sync order ของวันนั้นเสร็จแล้ว
 
-    TikTok: ไม่มี filter "Full Tax" — download รวมทีเดียว
+    TikTok: ไม่มี filter "Full Tax" — download รวมทีเดียว ถือเป็นบิลปกติ (ONIV) เสมอ
+    จึงบังคับ document_date="1" (วันที่ปัจจุบัน) ให้เรียงลำดับตรงกับเลขที่เอกสารตามที่บัญชีต้องการ
+
     Shopee/Lazada: มี filter "Full Tax" (1=ลูกค้าขอ ETAX, 0=บิลปกติ) ซึ่งต้องใช้ prefix
-    เอกสาร (ETIV/ONIV) และ Contact Name (Follow Platform/Follow TRCLOUD Master) ต่างกัน —
+    เอกสาร (ETIV/ONIV), Contact Name (Follow Platform/Follow TRCLOUD Master) และ document_date
+    ต่างกัน — บิลปกติ (ONIV) ใช้ document_date="1" (วันที่ปัจจุบัน ตามที่บัญชีต้องการให้เรียง
+    ลำดับตรงกับเลขที่เอกสาร) ส่วน ETAX (ETIV) ยังคงใช้ document_date="0" (วันที่ order จริง)
     ต้อง sync แยก batch ตาม filter และสลับ setting ที่หน้า manage-shop ก่อน download
     แต่ละ batch แล้วสลับกลับเป็นค่า default (ONIV / Follow TRCLOUD Master) เมื่อจบ
     """
@@ -1565,10 +1584,6 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
     url_tpl = FULL_INVOICE_ENDPOINTS.get(platform)
     if not url_tpl:
         return True  # platform นี้ยังไม่รองรับ FULL INVOICE — ข้าม ไม่ถือว่า fail
-
-    # ── เช็ค document_date ทุกครั้ง ทุกร้าน ก่อนโหลด invoice (ทุก platform) ──
-    log(f"  → เช็ค manage-shop settings (document_date)")
-    await ensure_document_date(page, platform, shop_id)
 
     url = url_tpl.format(shop_id=shop_id)
     if not await _safe_goto(page, url):
@@ -1584,6 +1599,14 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
     await _set_outstanding_filter(page, "yes")
 
     if platform not in FULL_TAX_PLATFORMS:
+        # ── บิลปกติเสมอ (ไม่มี ETAX) — บังคับ document_date="1" ทุกครั้ง ──
+        log(f"  → เช็ค manage-shop settings (document_date)")
+        await ensure_document_date(page, platform, shop_id)
+        if not await _safe_goto(page, url):
+            log(f"  ❌ Page load timeout (FULL INVOICE, re-nav): {url}")
+            return False
+        await set_report_date_filter(page, sync_date)
+        await _set_outstanding_filter(page, "yes")
         log(f"  → FULL INVOICE: RUN (generate report, outstanding only)")
         order_count = await _run_report_and_count(page)
         log(f"    Pending rows: {order_count}")
@@ -1594,8 +1617,10 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
         return await _full_invoice_download(page, shop, order_count, signal, sync_date, "All")
 
     # ── Shopee/Lazada: แยก batch ตาม Full Tax filter (ETAX ก่อน แล้วค่อยปกติ) ──
-    ETAX_SETTINGS   = {"prefix": PREFIX_IV_ETAX,   "contact_name": CONTACT_NAME_FOLLOW_PLATFORM}
-    NORMAL_SETTINGS = {"prefix": PREFIX_IV_NORMAL, "contact_name": CONTACT_NAME_FOLLOW_MASTER}
+    ETAX_SETTINGS   = {"prefix": PREFIX_IV_ETAX,   "contact_name": CONTACT_NAME_FOLLOW_PLATFORM,
+                       "document_date": DOCUMENT_DATE_FOLLOW_PLATFORM}
+    NORMAL_SETTINGS = {"prefix": PREFIX_IV_NORMAL, "contact_name": CONTACT_NAME_FOLLOW_MASTER,
+                       "document_date": DOCUMENT_DATE_CURRENT}
 
     left_on_etax_settings = False
     for tax_flag, target, label in [("1", ETAX_SETTINGS, "ETAX"), ("0", NORMAL_SETTINGS, "Normal")]:
@@ -1621,15 +1646,20 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
         if current is None:
             log(f"  ❌ Failed to read manage-shop settings for {label}")
             return False
-        needs_update = (current["prefix_iv"] != target["prefix"] or current["contact_name"] != target["contact_name"])
+        needs_update = (current["prefix_iv"] != target["prefix"]
+                        or current["contact_name"] != target["contact_name"]
+                        or current["document_date"] != target["document_date"])
         if needs_update:
-            log(f"    → Settings → prefix={target['prefix']}, contact_name={target['contact_name']} (manage-shop)")
-            if not await set_shop_invoice_settings(page, platform, shop_id, target["prefix"], target["contact_name"]):
+            log(f"    → Settings → prefix={target['prefix']}, contact_name={target['contact_name']}, "
+                f"document_date={target['document_date']} (manage-shop)")
+            if not await set_shop_invoice_settings(page, platform, shop_id, target["prefix"],
+                                                    target["contact_name"], target["document_date"]):
                 log(f"  ❌ Failed to update manage-shop settings for {label}")
                 return False
             left_on_etax_settings = (label == "ETAX")
         else:
-            log(f"    ✓ Settings already prefix={target['prefix']}, contact_name={target['contact_name']}")
+            log(f"    ✓ Settings already prefix={target['prefix']}, contact_name={target['contact_name']}, "
+                f"document_date={target['document_date']}")
             left_on_etax_settings = False
 
         # get/set_shop_invoice_settings navigate ออกไปหน้า manage-shop เสมอ — ต้องกลับมาตั้ง
@@ -1648,7 +1678,8 @@ async def sync_full_invoice_step(page, shop: dict, sync_date: str, signal: _Sign
     if left_on_etax_settings:
         # จบ loop ด้วย settings ของ ETAX ค้างไว้ (เช่นวันนั้นไม่มี Normal orders เลย) — สลับกลับให้ปลอดภัย
         log(f"  → Reset manage-shop settings back to Normal (safety)")
-        if not await set_shop_invoice_settings(page, platform, shop_id, NORMAL_SETTINGS["prefix"], NORMAL_SETTINGS["contact_name"]):
+        if not await set_shop_invoice_settings(page, platform, shop_id, NORMAL_SETTINGS["prefix"],
+                                                NORMAL_SETTINGS["contact_name"], NORMAL_SETTINGS["document_date"]):
             log(f"  ⚠ Could not reset settings — กรุณาเช็ค manage-shop settings ด้วยตนเอง")
 
     return True
