@@ -756,17 +756,26 @@ async def sync_shopee_status_only(page, shop: dict, sync_date: str = None, signa
         await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_status_step1")
         return False
 
+    # ── Filter Outstanding = No Item: เฉพาะออเดอร์ที่ยังไม่เคย sync items เข้า TRCloud ──
+    # กัน sync items ซ้ำสำหรับออเดอร์ที่เคย sync ไปแล้ว (STATUS mode มักรันซ้ำวันเดิมบ่อยๆ)
+    log(f"  → Filter Outstanding = No Item (เฉพาะออเดอร์ที่ยังไม่ sync items)")
+    await _set_outstanding_filter(page, "no_item")
+    await _run_report_and_count(page)
+
     # ── Tick Select All (Step 2) ──
     log(f"  → Tick Select All")
     order_count = 0
     try:
         order_count = await js_tick_select_all(page)
-        log(f"    {'✓ Select All done' if order_count else '⚠ No checkbox found — proceeding to Step 2'}")
+        log(f"    {'✓ Select All done' if order_count else '⚠ No checkbox found (no outstanding items) — skip Step 2'}")
         await page.wait_for_timeout(200)
     except Exception as e:
         log(f"    ⚠ Select All: {e}")
 
-    # ── Step 2: SYNC ITEMs ──
+    # ── Step 2: SYNC ITEMs (ข้ามถ้าไม่มีออเดอร์ที่ต้อง sync items) ──
+    if order_count == 0:
+        log(f"  ✅ Step 2: ไม่มีออเดอร์ที่ต้อง sync items — skip")
+        return True
     log(f"  → Step 2: Sync Items")
     try:
         prepare_complete_event(signal)
@@ -1164,34 +1173,46 @@ async def sync_shopee_shop(page, shop: dict, sync_date: str = None, signal: _Sig
         await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step1")
         return False
 
+    # ── Filter Outstanding = No Item: เฉพาะออเดอร์ที่ยังไม่เคย sync items เข้า TRCloud ──
+    # กัน sync items ซ้ำสำหรับออเดอร์ที่เคย sync ไปแล้ว (เช่น sync ย้อนหลังหลัง STATUS)
+    log(f"  → Filter Outstanding = No Item (เฉพาะออเดอร์ที่ยังไม่ sync items)")
+    await _set_outstanding_filter(page, "no_item")
+    await _run_report_and_count(page)
+
     # ── Tick Select All (Step 2) ──
     log(f"  → Tick Select All")
     order_count = 0
     try:
         order_count = await js_tick_select_all(page)
-        log(f"    {'✓ Select All done' if order_count else '⚠ No checkbox found — proceeding to Step 2'}")
+        log(f"    {'✓ Select All done' if order_count else '⚠ No checkbox found (no outstanding items) — skip Step 2'}")
         await page.wait_for_timeout(200)
     except Exception as e:
         log(f"    ⚠ Select All: {e}")
 
-    # ── Step 2: SYNC ITEMs ──
-    log(f"  → Step 2: Sync Items")
-    try:
-        prepare_complete_event(signal)
-        if not await js_click_button(page, "SYNC ITEMs"):
-            log(f"  ❌ Step 2 button not found")
-            await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step2_notfound")
+    # ── Step 2: SYNC ITEMs (ข้ามถ้าไม่มีออเดอร์ที่ต้อง sync items) ──
+    if order_count == 0:
+        log(f"  ✅ Step 2: ไม่มีออเดอร์ที่ต้อง sync items — skip")
+    else:
+        log(f"  → Step 2: Sync Items")
+        try:
+            prepare_complete_event(signal)
+            if not await js_click_button(page, "SYNC ITEMs"):
+                log(f"  ❌ Step 2 button not found")
+                await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step2_notfound")
+                return False
+
+            await page.wait_for_timeout(1000)
+            await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count),
+                                           shop_name=shop["name"], step="step2")
+            log(f"  ✅ Step 2 OK")
+
+        except Exception as e:
+            log(f"  ❌ Step 2 failed: {e}")
+            await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step2")
             return False
 
-        await page.wait_for_timeout(1000)
-        await wait_for_complete_popup(page, shop_id, signal, timeout=calc_timeout(order_count),
-                                       shop_name=shop["name"], step="step2")
-        log(f"  ✅ Step 2 OK")
-
-    except Exception as e:
-        log(f"  ❌ Step 2 failed: {e}")
-        await _screenshot(page, f"error_shopee_{_safe_name(shop['name'])}{shop_id}_step2")
-        return False
+    # ── คืน filter Outstanding เป็น All ก่อน Step 3 (Full Tax ต้องดูออเดอร์ทั้งหมด ไม่ใช่แค่ No Item) ──
+    await _set_outstanding_filter(page, "all")
 
     # ── RUN refresh before Step 3 ──
     log(f"  → RUN refresh before Step 3")

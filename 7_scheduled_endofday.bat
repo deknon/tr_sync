@@ -8,7 +8,8 @@ setlocal enabledelayedexpansion
 :: - D-3 ถึง D-1: STATUS อย่างเดียว (Step 1 + Step 2 เฉพาะ Shopee) แค่พอเช็ค/อัปเดต
 ::   สถานะที่เปลี่ยนตอนส่งของสิ้นวัน ไม่ต้อง sync items/full-tax ซ้ำ (เคย sync แล้วตอนเป็น D-0)
 :: - FULL INVOICE (Outstanding only) คลุม D-3 ถึง D-0 ทั้งช่วง เป็น safety net กันบิลตกหล่น
-:: ทุก platform หน้าต่างเดียว จบแล้วส่งอีเมลสรุปผลรวมครั้งเดียว
+:: ทุก platform หน้าต่างเดียว (เรียบง่าย รันทีละขั้นตอน) จบแล้วส่งอีเมลสรุปผลรวมครั้งเดียว
+:: ถ้าต้องการเวอร์ชันเร็วกว่านี้ (แยกหน้าต่างต่อ platform) ดูไฟล์ 8_scheduled_endofday_parallel.bat
 :: log ของแต่ละขั้นตอนถูกบันทึกอัตโนมัติอยู่แล้วที่ logs\text\run_ORDER_*.txt,
 :: run_STATUS_*.txt และ run_FULL_INVOICE_*.txt (ไม่ต้องตั้งค่าเพิ่ม)
 :: ────────────────────────────────────────────
