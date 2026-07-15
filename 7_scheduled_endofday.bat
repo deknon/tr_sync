@@ -65,17 +65,21 @@ set INVOICE_EXIT=%ERRORLEVEL%
 echo [FULL INVOICE] End  : %time%
 echo.
 
-:: Combined email notification
+:: Email notification — ส่งเฉพาะตอนมี error/fail เท่านั้น (สำเร็จหมดไม่ต้องส่งรบกวน)
 set ORDER_STATUS=success
-if not %ORDER_EXIT%==0 set ORDER_STATUS=failed
+if not "%ORDER_EXIT%"=="0" set ORDER_STATUS=failed
 
 set STATUS_RESULT=success
-if not %STATUS_EXIT%==0 set STATUS_RESULT=failed
+if not "%STATUS_EXIT%"=="0" set STATUS_RESULT=failed
 
 set INVOICE_STATUS=success
-if not %INVOICE_EXIT%==0 set INVOICE_STATUS=failed
+if not "%INVOICE_EXIT%"=="0" set INVOICE_STATUS=failed
 
-python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] End-of-day sync %END_DATE% done', 'End-of-day sync (after shipping) completed\n\nORDER (D-0, Step 1-3)     : %ORDER_STATUS%\nSTATUS (D-3 to D-1)       : %STATUS_RESULT%\nFULL INVOICE (D-3 to D-0) : %INVOICE_STATUS%\n\nLog: logs\\text\\run_ORDER_*.txt, run_STATUS_*.txt, run_FULL_INVOICE_*.txt')"
+if "%ORDER_STATUS%%STATUS_RESULT%%INVOICE_STATUS%"=="successsuccesssuccess" (
+    echo [email] All steps succeeded — no notification email sent.
+) else (
+    python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] End-of-day sync %END_DATE% FAILED', 'End-of-day sync (after shipping) had failure(s)\n\nORDER (D-0, Step 1-3)     : %ORDER_STATUS%\nSTATUS (D-3 to D-1)       : %STATUS_RESULT%\nFULL INVOICE (D-3 to D-0) : %INVOICE_STATUS%\n\nLog: logs\\text\\run_ORDER_*.txt, run_STATUS_*.txt, run_FULL_INVOICE_*.txt')"
+)
 
 echo ============================================================
 echo  Done  [%date% %time%]

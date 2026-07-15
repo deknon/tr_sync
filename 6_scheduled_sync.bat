@@ -50,14 +50,18 @@ set RV_EXIT=%ERRORLEVEL%
 echo [RV] End  : %time%
 echo.
 
-:: Combined email notification
+:: Email notification — ส่งเฉพาะตอนมี error/fail เท่านั้น (สำเร็จหมดไม่ต้องส่งรบกวน)
 set ORDER_STATUS=success
-if not %ORDER_EXIT%==0 set ORDER_STATUS=failed
+if not "%ORDER_EXIT%"=="0" set ORDER_STATUS=failed
 
 set RV_STATUS=success
-if not %RV_EXIT%==0 set RV_STATUS=failed
+if not "%RV_EXIT%"=="0" set RV_STATUS=failed
 
-python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] Scheduled sync %YESTERDAY% done', 'Scheduled sync completed for %YESTERDAY%\n\nORDER : %ORDER_STATUS%\nRV    : %RV_STATUS%')"
+if "%ORDER_STATUS%%RV_STATUS%"=="successsuccess" (
+    echo [email] All steps succeeded — no notification email sent.
+) else (
+    python -c "from trcloud_sync_browser import notify_gmail; notify_gmail('[TRCloud] Scheduled sync %YESTERDAY% FAILED', 'Scheduled sync for %YESTERDAY% had failure(s)\n\nORDER : %ORDER_STATUS%\nRV    : %RV_STATUS%')"
+)
 
 echo ============================================================
 echo  Done  [%date% %time%]
